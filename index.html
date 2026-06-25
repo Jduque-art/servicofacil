@@ -1,0 +1,2233 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1a56a0">
+<title>ServiçoFácil</title>
+<!-- Firebase SDK (compat — funciona em HTML standalone) -->
+<!-- Firebase SDK via CDN -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+<script>
+// Firebase init — executa após CDN carregar
+window.addEventListener('load', function(){
+  var attempts = 0;
+  function tryInitFirebase(){
+    attempts++;
+    if(typeof firebase === 'undefined'){
+      if(attempts < 30){ setTimeout(tryInitFirebase, 200); return; }
+      console.error('[Firebase] SDK não carregou');
+      var sb=document.getElementById('sync-badge');
+      if(sb) sb.textContent='⚠️ Sem Firebase';
+      return;
+    }
+    // Firebase disponível — inicializar
+  var firebaseConfig = {
+    apiKey:            "AIzaSyD7XB2oLPW3DBRJ8d6oatSOG903kEYwl8U",
+    authDomain:        "servicofacil-173dc.firebaseapp.com",
+    projectId:         "servicofacil-173dc",
+    storageBucket:     "servicofacil-173dc.firebasestorage.app",
+    messagingSenderId: "1079027213873",
+    appId:             "1:1079027213873:web:1183261e31fc838e92d710"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  var db = firebase.firestore();
+
+  // ── CRUD Prestadores ───────────────────────────────────────────
+  window.fbSaveProvider = function(p){
+    return db.collection('providers').doc(String(p.id)).set(
+      Object.assign({}, p, {id: String(p.id)})
+    );
+  };
+  window.fbDeleteProvider = function(id){
+    return db.collection('providers').doc(String(id)).delete();
+  };
+
+  // ── CRUD Categorias ────────────────────────────────────────────
+  window.fbSaveCategory = function(c){
+    return db.collection('categories').doc(c.nome).set(c);
+  };
+  window.fbDeleteCategory = function(nome){
+    return db.collection('categories').doc(nome).delete();
+  };
+  window.fbRenameCategory = function(oldNome, newNome, updatedCat){
+    return db.collection('categories').doc(oldNome).delete().then(function(){
+      return db.collection('categories').doc(newNome).set(updatedCat);
+    });
+  };
+
+  // ── Listener: Prestadores em tempo real ───────────────────────
+  db.collection('providers').onSnapshot(function(snap){
+    var list = [];
+    snap.forEach(function(d){
+      var p = d.data();
+      // Garante id numérico para compatibilidade interna
+      if(typeof p.id === 'string') p.id = parseInt(p.id)||p.id;
+      list.push(p);
+    });
+    window._providers = list;
+    localStorage.setItem('sf_providers', JSON.stringify(list));
+    try{ renderHomeProviders(); }catch(e){}
+    try{ updateBadge(); }catch(e){}
+    var bv=document.getElementById('view-buscar');
+    if(bv&&bv.classList.contains('active')) try{ renderBuscar(); }catch(e){}
+    var gv=document.getElementById('view-gerenciar');
+    if(gv&&gv.classList.contains('active')) try{ renderGerenciar(); }catch(e){}
+    // Atualiza badge de sync
+    var sb=document.getElementById('sync-badge');
+    if(sb) sb.textContent='☁️ '+list.length+(list.length===1?' prestador':' prestadores');
+    console.log('[Firebase] providers atualizado:', list.length);
+    // Force re-render ALL views so no stale data anywhere
+    setTimeout(function(){
+      try{ renderHomeProviders(); }catch(e){}
+      try{ updateBadge(); }catch(e){}
+      try{ renderGerenciar(); }catch(e){}
+      var bv=document.getElementById('view-buscar');
+      if(bv&&bv.classList.contains('active')) try{ renderBuscar(); }catch(e){}
+    }, 100);
+  }, function(err){
+    console.error('[Firebase] providers erro:', err);
+    var sb=document.getElementById('sync-badge');
+    if(sb) sb.textContent='⚠️ Sem conexão';
+    showToast('⚠️ Erro Firebase: '+err.code);
+  });
+
+  // ── Listener: Categorias em tempo real ────────────────────────
+  db.collection('categories').onSnapshot(function(snap){
+    var list = [];
+    snap.forEach(function(d){ list.push(d.data()); });
+    if(list.length === 0){
+      // Banco vazio: sobe categorias padrão
+      if(window.CAT_DEFAULTS){
+        window.CAT_DEFAULTS.forEach(function(c){
+          db.collection('categories').doc(c.nome).set(c);
+        });
+      }
+    } else {
+      window._categories = list;
+      localStorage.setItem('sf_cats', JSON.stringify(list));
+      try{ populateFCat(); }catch(e){}
+      var bv=document.getElementById('view-buscar');
+      if(bv&&bv.classList.contains('active')) try{ renderBuscar(); }catch(e){}
+      console.log('[Firebase] categories atualizado:', list.length);
+    }
+  }, function(err){
+    console.error('[Firebase] categories erro:', err);
+  });
+
+  window._firebaseReady = true;
+  if(window._onFirebaseReady) window._onFirebaseReady();
+  console.log('[Firebase] Conectado (compat mode)');
+
+  // Atualiza badge após conectar
+  setTimeout(function(){
+    var sb=document.getElementById('sync-badge');
+    if(sb&&sb.textContent==='☁️') sb.textContent='☁️ Online';
+  }, 2000);
+  }
+  tryInitFirebase();
+});
+</script>r:var(--text-muted)}
+.stars{color:#e8a000;font-size:13px}
+
+.transport-tabs{display:flex;gap:6px;margin-bottom:10px}
+.transport-tab{flex:1;padding:7px 0;border-radius:var(--radius-sm);font-size:12px;font-weight:500;text-align:center;cursor:pointer;border:1px solid var(--border);background:var(--white);color:var(--text-muted);transition:all .15s}
+.transport-tab.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+
+.route-bar{display:flex;align-items:center;margin:4px 0 10px}
+.route-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.route-dot-a{background:var(--blue)}.route-dot-b{background:var(--red)}
+.route-line{flex:1;height:2px;background:repeating-linear-gradient(90deg,var(--blue) 0,var(--blue) 6px,transparent 6px,transparent 10px)}
+
+.actions-row{display:flex;gap:8px;margin-top:8px}
+.btn{flex:1;border:none;border-radius:10px;padding:10px 0;font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;transition:opacity .1s,transform .1s}
+.btn:active{opacity:.85;transform:scale(.98)}
+.btn-primary{background:var(--blue);color:#fff}
+.btn-outline{background:var(--white);color:var(--blue);border:1.5px solid var(--blue)}
+.btn-green{background:var(--green);color:#fff}
+.btn-red{background:var(--red);color:#fff}
+.btn-icon{flex:none;padding:10px 14px}
+
+/* SEARCH */
+.search-bar{background:var(--white);border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:10px;border:.5px solid var(--border)}
+.search-bar input{flex:1;border:none;outline:none;font-size:14px;color:var(--text);background:transparent}
+.search-bar input::placeholder{color:var(--text-muted)}
+
+/* CAT GRID - buscar */
+.cat-grid-search{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.cat-card-search{background:var(--white);border-radius:var(--radius);padding:14px 12px;border:.5px solid var(--border);display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;transition:all .15s;text-align:center}
+.cat-card-search:active,.cat-card-search.active{background:var(--blue-light);border-color:var(--blue)}
+.cat-card-search .cat-emoji{font-size:28px}
+.cat-card-search .cat-name{font-size:13px;font-weight:500}
+.cat-card-search .cat-count{font-size:11px;color:var(--text-muted)}
+
+/* PROVIDER ITEM */
+.provider-item{display:flex;align-items:center;gap:12px;padding:10px 0;cursor:pointer}
+.provider-item+.provider-item{border-top:.5px solid var(--border)}
+.provider-item:active{opacity:.7}
+.prov-avatar{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.prov-name{font-size:14px;font-weight:500}
+.prov-meta{font-size:12px;color:var(--text-muted)}
+.prov-dist{font-size:12px;font-weight:600;color:var(--blue)}
+.prov-time{font-size:11px;color:var(--text-muted)}
+
+/* FORM */
+.form-group{display:flex;flex-direction:column;gap:5px;margin-bottom:11px}
+.form-label{font-size:13px;font-weight:500;color:var(--text-muted)}
+.form-label span.req{color:var(--red)}
+.form-input{border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;color:var(--text);outline:none;background:var(--white);width:100%;transition:border .15s}
+.form-input:focus{border-color:var(--blue)}
+.form-input.loading{background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24'%3E%3Cpath fill='%231a56a0' d='M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8Z' opacity='.3'/%3E%3Cpath fill='%231a56a0' d='M20 12h2A10 10 0 0 0 12 2v2a8 8 0 0 1 8 8Z'%3E%3CanimateTransform attributeName='transform' type='rotate' from='0 12 12' to='360 12 12' dur='.8s' repeatCount='indefinite'/%3E%3C/path%3E%3C/svg%3E") no-repeat right 12px center;background-size:18px;}
+.form-select{border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;color:var(--text);outline:none;background:var(--white);width:100%;-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23888' d='M6 8L0 0h12z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;background-size:10px}
+.form-select:focus{border-color:var(--blue)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.form-hint{font-size:11px;color:var(--text-muted);margin-top:3px}
+.form-success{font-size:11px;color:var(--green);margin-top:3px}
+
+/* BOTTOM NAV */
+.bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:var(--white);border-top:.5px solid var(--border);padding:8px 0 calc(8px + var(--safe-bottom));display:flex;justify-content:space-around;z-index:100}
+.nav-item{display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;padding:0 8px;position:relative}
+.nav-icon{font-size:22px;line-height:1}
+.nav-label{font-size:10px;color:var(--text-muted)}
+.nav-item.active .nav-label{color:var(--blue);font-weight:600}
+.nav-badge{position:absolute;top:-2px;right:2px;background:var(--red);color:#fff;border-radius:10px;font-size:10px;padding:1px 5px;font-weight:700;min-width:16px;text-align:center;display:none}
+
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:150;display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .25s}
+.modal-overlay.show{opacity:1;pointer-events:all}
+.modal-sheet{background:var(--white);border-radius:20px 20px 0 0;padding:20px 16px calc(20px + var(--safe-bottom));width:100%;max-width:480px;max-height:94vh;overflow-y:auto;transform:translateY(100%);transition:transform .3s}
+.modal-overlay.show .modal-sheet{transform:translateY(0)}
+.modal-handle{width:40px;height:4px;background:#ddd;border-radius:2px;margin:0 auto 16px}
+.modal-title{font-size:17px;font-weight:600;margin-bottom:16px;text-align:center;color:var(--blue)}
+
+/* TOAST */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;z-index:300;opacity:0;transition:opacity .3s;white-space:nowrap;pointer-events:none}
+.toast.show{opacity:1}
+
+/* LOADING */
+#loading-overlay{transition:opacity .5s}
+#loading-overlay.gone{display:none!important}
+
+/* VIEWS */
+.view{display:none}
+.view.active{display:flex;flex-direction:column;flex:1;overflow:hidden}
+.section-label{font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+
+/* INSTALL BANNER */
+#install-banner{background:var(--blue-light);border-bottom:.5px solid var(--blue);padding:10px 16px;display:none;align-items:center;gap:10px;flex-shrink:0}
+#install-banner.show{display:flex}
+#install-banner p{flex:1;font-size:12px;color:var(--blue)}
+#install-banner button{font-size:12px;font-weight:600;color:var(--blue);background:none;border:1.5px solid var(--blue);border-radius:8px;padding:4px 10px;cursor:pointer}
+
+.empty-state{text-align:center;padding:28px 16px;color:var(--text-muted)}
+.empty-icon{font-size:36px;margin-bottom:10px}
+.empty-state p{font-size:14px;line-height:1.5}
+
+/* SEARCH BACK BTN */
+.back-btn{background:none;border:none;color:#fff;font-size:20px;cursor:pointer;padding:4px;display:flex;align-items:center}
+
+/* SECTION HEADER */
+.section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.section-header .see-all{font-size:12px;color:var(--blue);cursor:pointer;font-weight:500}
+
+.color-opt{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer;border:2px solid transparent;transition:border .15s}
+.color-opt.selected{border-color:var(--blue)}
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="loading-overlay" style="position:fixed;inset:0;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:9999;transition:opacity .5s">
+  <div style="font-size:52px">🔧</div>
+  <div style="font-size:22px;font-weight:700;color:var(--blue)">ServiçoFácil</div>
+  <div style="font-size:13px;color:var(--text-muted)" id="loading-msg">Carregando...</div>
+  <div class="spinner" style="margin-top:6px"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ══ MODAL: DETALHE PRESTADOR ══ -->
+<div class="modal-overlay" id="modal-provider" onclick="closeModalBg(event,'modal-provider')">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div id="modal-provider-content"></div>
+  </div>
+</div>
+
+<!-- ══ MODAL: CADASTRAR PRESTADOR ══ -->
+<div class="modal-overlay" id="modal-cadastro" onclick="closeModalBg(event,'modal-cadastro')">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">📋 Cadastrar Prestador</div>
+
+    <!-- DADOS PESSOAIS -->
+    <div style="font-size:12px;font-weight:600;color:var(--blue);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;padding-bottom:6px;border-bottom:.5px solid var(--border)">Dados do prestador</div>
+
+    <div class="form-group">
+      <label class="form-label">Nome completo <span class="req">*</span></label>
+      <input class="form-input" id="f-nome" type="text" placeholder="Ex: Dr. Rafael Lima">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Categoria <span class="req">*</span></label>
+        <select class="form-select" id="f-cat">
+          <option value="">Selecione...</option>
+        </select>
+        <div style="font-size:11px;color:var(--blue);margin-top:4px;cursor:pointer" onclick="openCatsModal()">⚙️ Gerenciar categorias</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Especialidade</label>
+        <input class="form-input" id="f-espec" type="text" placeholder="Ex: Clínica Geral">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Telefone</label>
+        <input class="form-input" id="f-tel" type="tel" placeholder="(24) 99999-9999" oninput="maskPhone(this)" maxlength="15">
+      </div>
+      <div class="form-group">
+        <label class="form-label">WhatsApp</label>
+        <input class="form-input" id="f-wpp" type="tel" placeholder="5524999999999" oninput="maskPhone(this)" maxlength="15">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Disponibilidade</label>
+        <select class="form-select" id="f-disp">
+          <option>Disponível agora</option>
+          <option>Somente agendamento</option>
+          <option>Ocupado</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Valor</label>
+        <input class="form-input" id="f-valor" type="text" placeholder="R$ 150,00">
+      </div>
+    </div>
+
+    <!-- ENDEREÇO -->
+    <div style="font-size:12px;font-weight:600;color:var(--blue);text-transform:uppercase;letter-spacing:.5px;margin:4px 0 10px;padding-bottom:6px;border-bottom:.5px solid var(--border)">Endereço</div>
+
+    <!-- CEP -->
+    <div class="form-group">
+      <label class="form-label">CEP <span class="req">*</span></label>
+      <input class="form-input" id="f-cep" type="tel" maxlength="9" placeholder="00000-000" oninput="maskCep(this);if(this.value.replace(/\D/g,'').length===8)buscaCep();" onblur="buscaCep()">
+      <div class="form-hint" id="f-cep-hint">Digite o CEP para preencher o endereço automaticamente</div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Rua / Logradouro <span class="req">*</span></label>
+      <input class="form-input" id="f-rua" type="text" placeholder="Ex: Rua das Flores">
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Número</label>
+        <input class="form-input" id="f-num" type="tel" placeholder="214">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Complemento</label>
+        <input class="form-input" id="f-comp" type="text" placeholder="Apto 3, Sala 2...">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Bairro <span class="req">*</span></label>
+      <input class="form-input" id="f-bairro" type="text" placeholder="Ex: Centro">
+    </div>
+
+    <!-- ESTADO -->
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Estado <span class="req">*</span></label>
+        <select class="form-select" id="f-uf" onchange="carregarCidades('f')">
+          <option value="">UF...</option>
+          <option value="AC">AC – Acre</option>
+          <option value="AL">AL – Alagoas</option>
+          <option value="AP">AP – Amapá</option>
+          <option value="AM">AM – Amazonas</option>
+          <option value="BA">BA – Bahia</option>
+          <option value="CE">CE – Ceará</option>
+          <option value="DF">DF – Distrito Federal</option>
+          <option value="ES">ES – Espírito Santo</option>
+          <option value="GO">GO – Goiás</option>
+          <option value="MA">MA – Maranhão</option>
+          <option value="MT">MT – Mato Grosso</option>
+          <option value="MS">MS – Mato Grosso do Sul</option>
+          <option value="MG">MG – Minas Gerais</option>
+          <option value="PA">PA – Pará</option>
+          <option value="PB">PB – Paraíba</option>
+          <option value="PR">PR – Paraná</option>
+          <option value="PE">PE – Pernambuco</option>
+          <option value="PI">PI – Piauí</option>
+          <option value="RJ">RJ – Rio de Janeiro</option>
+          <option value="RN">RN – Rio Grande do Norte</option>
+          <option value="RS">RS – Rio Grande do Sul</option>
+          <option value="RO">RO – Rondônia</option>
+          <option value="RR">RR – Roraima</option>
+          <option value="SC">SC – Santa Catarina</option>
+          <option value="SP">SP – São Paulo</option>
+          <option value="SE">SE – Sergipe</option>
+          <option value="TO">TO – Tocantins</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Cidade <span class="req">*</span></label>
+        <select class="form-select" id="f-cidade" disabled>
+          <option value="">Selecione o estado</option>
+        </select>
+        <div class="form-hint" id="f-cidade-hint" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- AVALIAÇÃO -->
+    <div class="form-group">
+      <label class="form-label">Avaliação inicial</label>
+      <div style="display:flex;gap:8px">
+        <div id="star-select" style="display:flex;gap:4px;font-size:26px;cursor:pointer">
+          <span onclick="setRating(1)" class="star" data-v="1">☆</span>
+          <span onclick="setRating(2)" class="star" data-v="2">☆</span>
+          <span onclick="setRating(3)" class="star" data-v="3">☆</span>
+          <span onclick="setRating(4)" class="star" data-v="4">☆</span>
+          <span onclick="setRating(5)" class="star" data-v="5">☆</span>
+        </div>
+        <span id="rating-label" style="font-size:13px;color:var(--text-muted);align-self:center">Toque para avaliar</span>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:8px;padding-bottom:4px">
+      <button class="btn btn-outline" onclick="closeModal("modal-cadastro")" style="flex:1">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarPrestador()" style="flex:2">💾 Salvar prestador</button>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="status-bar">
+    <span id="clock">09:41</span><span>📶 🔋</span>
+  </div>
+  <div id="install-banner">
+    <span>📲</span><p>Instale o app na tela inicial!</p>
+    <button id="install-btn">Instalar</button>
+  </div>
+
+  <!-- ══════ VIEW: INÍCIO ══════ -->
+  <div class="view active" id="view-home">
+    <div class="top-bar">
+      <div class="top-bar-info">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="top-bar-title">ServiçoFácil</div>
+          <span id="sync-badge" style="font-size:10px;background:rgba(255,255,255,0.2);border-radius:10px;padding:2px 7px;font-weight:500">☁️</span>
+        </div>
+        <div class="top-bar-sub" id="location-label">Obtendo localização...</div>
+      </div>
+      <span style="font-size:18px;cursor:pointer" onclick="forceSyncToFirebase()" title="Sincronizar com nuvem">☁️</span>
+      <span style="font-size:20px;cursor:pointer" onclick="showToast('🔔 Sem notificações')">🔔</span>
+      <div class="avatar" id="user-avatar" onclick="abrirModalPerfil()" title="Meu perfil" style="cursor:pointer">?</div>
+    </div>
+
+    <div id="map">
+      <div id="map-placeholder"><div class="spinner"></div><span style="font-size:13px">Carregando mapa...</span></div>
+      <div class="info-pill" id="info-pill">
+        <span>📍 <span id="pill-dist">—</span></span>
+        <span style="opacity:.4">|</span>
+        <span>🕐 <span id="pill-time">—</span></span>
+        <span style="opacity:.4">|</span>
+        <div class="live-dot"></div>
+      </div>
+      <button class="map-btn" id="expand-map-btn" onclick="toggleMap()">⛶ Expandir</button>
+    </div>
+
+    <div class="content-area">
+      <div class="card" id="distance-card" style="display:none">
+        <div class="card-header">
+          <div class="card-icon">🗺️</div>
+          <div><div class="card-title">Distância ao prestador</div><div class="card-sub" id="dest-label">—</div></div>
+        </div>
+        <div class="transport-tabs">
+          <div class="transport-tab active" onclick="setTransport('DRIVING',this)">🚗 Carro</div>
+          <div class="transport-tab" onclick="setTransport('WALKING',this)">🚶 A pé</div>
+          <div class="transport-tab" onclick="setTransport('TRANSIT',this)">🚌 Ônibus</div>
+        </div>
+        <div class="route-bar"><div class="route-dot route-dot-a"></div><div class="route-line"></div><div class="route-dot route-dot-b"></div></div>
+        <div class="meta-row"><span class="meta-label">📏 Distância</span><span class="meta-value blue" id="dist-value">—</span></div>
+        <div class="meta-row"><span class="meta-label">⏱ Tempo</span><span class="meta-value green" id="time-value">—</span></div>
+        <div class="meta-row"><span class="meta-label">🚦 Trânsito</span><span id="traffic-badge" class="badge badge-green">—</span></div>
+        <div class="actions-row">
+          <button class="btn btn-primary" onclick="openMapsRoute()">🧭 Abrir rota</button>
+          <button class="btn btn-outline" onclick="refreshDistance()">🔄 Atualizar</button>
+        </div>
+      </div>
+
+      <div class="section-header">
+        <span class="section-label">Prestadores cadastrados</span>
+        <span class="see-all" onclick="switchView('buscar')">Ver todos</span>
+      </div>
+      <div class="card" id="home-providers">
+        <div class="empty-state"><div class="empty-icon">📋</div><p>Nenhum prestador ainda.<br>Use <strong>Buscar</strong> para cadastrar.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════ VIEW: BUSCAR ══════ -->
+  <div class="view" id="view-buscar">
+    <div class="top-bar">
+      <div class="top-bar-info">
+        <div class="top-bar-title">Buscar prestador</div>
+      </div>
+      <button class="top-btn" onclick="openCatsModal()" style="margin-right:6px">🏷️</button>
+      <button class="top-btn" onclick="openModal(&quot;modal-cadastro&quot;)">+ Novo</button>
+    </div>
+
+    <!-- PAINEL ÚNICO — search bar sempre presente, nunca recriada -->
+    <div class="content-area" style="gap:8px">
+
+      <!-- SEARCH BAR — nunca tocada pelo JS -->
+      <div class="search-bar">
+        <span style="font-size:18px">🔍</span>
+        <input type="text" id="search-input"
+               placeholder="Buscar por nome ou serviço..."
+               autocomplete="off" autocorrect="off" spellcheck="false"
+               oninput="scheduleSearch()">
+        <span style="font-size:16px;cursor:pointer;color:var(--text-muted)" onclick="clearSearch()">✕</span>
+      </div>
+
+      <!-- FAVORITOS CHIP -->
+      <div style="display:flex;gap:8px;align-items:center">
+        <button onclick="filtrarFavoritos()" style="display:flex;align-items:center;gap:5px;background:var(--white);border:1px solid #e8a000;border-radius:20px;padding:5px 14px;font-size:13px;color:#b25a00;font-weight:500;cursor:pointer">
+          ⭐ Ver favoritos
+        </button>
+      </div>
+
+      <!-- BACK ROW — visível só durante busca por texto -->
+      <div id="buscar-back-row" style="display:none;align-items:center;gap:8px">
+        <button onclick="clearSearch()" style="background:var(--blue);border:none;color:#fff;border-radius:8px;padding:5px 10px;font-size:13px;cursor:pointer">← Voltar</button>
+        <div>
+          <span style="font-size:14px;font-weight:600" id="result-title"></span>
+          <span style="font-size:12px;color:var(--text-muted);margin-left:6px" id="result-count"></span>
+        </div>
+      </div>
+
+      <!-- SECTION LABEL dinâmico -->
+      <div class="section-label" id="buscar-section-label">Categorias disponíveis</div>
+
+      <!-- GRADE DE CATEGORIAS -->
+      <div class="cat-grid-search" id="cat-grid"></div>
+
+      <!-- LISTA DE RESULTADOS (inicialmente vazia/oculta) -->
+      <div id="results-list" style="display:none"></div>
+
+    </div>
+  </div>
+
+  <!-- ══════ VIEW: GERENCIAR ══════ -->
+  <div class="view" id="view-gerenciar">
+    <div class="top-bar">
+      <div class="top-bar-info"><div class="top-bar-title">Prestadores</div><div class="top-bar-sub" id="gerenciar-sub">0 cadastrados</div></div>
+      <button class="top-btn" onclick="openCatsModal()" style="margin-right:6px">🏷️ Cats</button>
+      <button class="top-btn" onclick="openModal("modal-cadastro")">+ Novo</button>
+    </div>
+    <div class="content-area" id="gerenciar-list"></div>
+  </div>
+
+  <!-- BOTTOM NAV -->
+  <div class="bottom-nav">
+    <div class="nav-item active" id="nav-home" onclick="switchView('home')">
+      <div class="nav-icon">🏠</div><div class="nav-label">Início</div>
+    </div>
+    <div class="nav-item" id="nav-buscar" onclick="switchView('buscar')">
+      <div class="nav-icon">🔍</div><div class="nav-label">Buscar</div>
+    </div>
+    <div class="nav-item" id="nav-gerenciar" onclick="switchView('gerenciar')">
+      <div class="nav-icon">👥</div><div class="nav-label">Prestadores</div>
+      <div class="nav-badge" id="count-badge">0</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════
+// CONSTANTES
+// ════════════════════════════════════════
+const GMAPS_KEY = 'AIzaSyCDvBqQjJ1m7Zxv3Iyneut0tS_p8bQtG_s';
+
+const CAT_DEFAULTS = [
+  {nome:'Médico',emoji:'👨‍⚕️',bg:'#fce4ec'},
+  {nome:'Dentista',emoji:'🦷',bg:'#e8f5e9'},
+  {nome:'Eletricista',emoji:'🔧',bg:'#e3f2fd'},
+  {nome:'Encanador',emoji:'🪛',bg:'#f3e5f5'},
+  {nome:'Advogado',emoji:'⚖️',bg:'#fff8e1'},
+  {nome:'Pintor',emoji:'🎨',bg:'#fce4ec'},
+  {nome:'Pedreiro',emoji:'🧱',bg:'#efebe9'},
+  {nome:'Mecânico',emoji:'🚗',bg:'#e0f2f1'},
+  {nome:'Cuidador',emoji:'🧑‍🤝‍🧑',bg:'#f1f8e9'},
+  {nome:'Nutricionista',emoji:'🥗',bg:'#e8f5e9'},
+  {nome:'Psicólogo',emoji:'🧠',bg:'#e8eaf6'},
+  {nome:'Cabeleireiro',emoji:'💇',bg:'#fce4ec'},
+  {nome:'Veterinário',emoji:'🐾',bg:'#fff3e0'},
+  {nome:'Outro',emoji:'🔩',bg:'#f5f5f5'}
+];
+function loadCats(){
+  try{
+    const stored=localStorage.getItem('sf_cats');
+    if(stored){ try{ return JSON.parse(stored); }catch{} }
+    localStorage.setItem('sf_cats',JSON.stringify(CAT_DEFAULTS));
+    return CAT_DEFAULTS;
+  }catch(e){ return CAT_DEFAULTS; }
+}
+function saveCats(list){ localStorage.setItem('sf_cats',JSON.stringify(list)); }
+// Alias so existing code still works
+function getCategorias(){ try{ return loadCats(); }catch(e){ return CAT_DEFAULTS; } }
+
+const DISP_BADGE = {'Disponível agora':'badge-green','Somente agendamento':'badge-blue','Ocupado':'badge-gray'};
+
+let userLat=null, userLng=null;
+let map=null, userMarker=null, providerMarker=null;
+let directionsService=null, directionsRenderer=null, distMatrixService=null, geocoder=null;
+let currentMode='DRIVING', selectedProvider=null, currentRating=0;
+let deferredInstall=null, mapExpanded=false;
+let activeCatFilter=null;
+
+// ════════════════════════════════════════
+// STORAGE
+// ════════════════════════════════════════
+function loadProviders(){
+  // Always prefer in-memory Firebase data over localStorage
+  if(window._providers && window._providers.length > 0) return window._providers;
+  try{ return JSON.parse(localStorage.getItem('sf_providers')||'[]'); }catch{ return []; }
+}
+function saveProviders(l){ localStorage.setItem('sf_providers',JSON.stringify(l)) }
+
+// ════════════════════════════════════════
+// CLOCK
+// ════════════════════════════════════════
+function tick(){ const n=new Date(); document.getElementById('clock').textContent=n.getHours().toString().padStart(2,'0')+':'+n.getMinutes().toString().padStart(2,'0'); }
+tick(); setInterval(tick,10000);
+
+// ════════════════════════════════════════
+// TOAST
+// ════════════════════════════════════════
+function showToast(m,d=2500){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),d); }
+
+// ════════════════════════════════════════
+// MODAL
+// ════════════════════════════════════════
+function openModal(id){ document.getElementById(id).classList.add('show'); }
+function closeModal(id){ document.getElementById(id).classList.remove('show'); }
+function closeModalBg(e,id){ if(e.target===document.getElementById(id)) closeModal(id); }
+
+// ════════════════════════════════════════
+// NAVIGATION
+// ════════════════════════════════════════
+function switchView(name){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  document.getElementById('nav-'+name).classList.add('active');
+  if(name==='buscar'){ renderBuscar(); }
+  if(name==='gerenciar'){
+    // Pull latest from Firebase before rendering
+    renderGerenciar();
+  }
+  if(name==='home') renderHomeProviders();
+}
+
+// ════════════════════════════════════════
+// CEP — ViaCEP API
+// ════════════════════════════════════════
+function maskCep(el){
+  let v=el.value.replace(/\D/g,'');
+  if(v.length>5) v=v.slice(0,5)+'-'+v.slice(5,8);
+  el.value=v;
+}
+
+function maskPhone(el){
+  let v=el.value.replace(/\D/g,'');
+  if(v.length>11) v=v.slice(0,11);
+  if(v.length<=10)
+    v=v.replace(/(\d{2})(\d{4})(\d{0,4})/,'($1) $2-$3');
+  else
+    v=v.replace(/(\d{2})(\d{5})(\d{0,4})/,'($1) $2-$3');
+  el.value=v.replace(/-$/,'');
+}
+
+async function buscaCep(prefix){
+  const px = prefix || 'f';
+  const cepEl  = document.getElementById(px+'-cep');
+  const hintEl = document.getElementById(px+'-cep-hint') || document.getElementById('f-cep-hint');
+  if(!cepEl) return;
+  const cep = cepEl.value.replace(/\D/g,'');
+  if(cep.length!==8){ return; }
+  if(hintEl){ hintEl.textContent='⏳ Buscando CEP...'; hintEl.className='form-hint'; }
+  cepEl.classList.add('loading');
+  try{
+    const r=await fetch('https://viacep.com.br/ws/'+cep+'/json/');
+    const d=await r.json();
+    cepEl.classList.remove('loading');
+    if(d.erro){
+      if(hintEl){ hintEl.textContent='❌ CEP não encontrado'; hintEl.className='form-hint'; }
+      return;
+    }
+    const set = (id,v) => { const el=document.getElementById(px+'-'+id); if(el&&v) el.value=v; };
+    set('rua',    d.logradouro);
+    set('bairro', d.bairro);
+    // Estado
+    const ufSel = document.getElementById(px+'-uf');
+    if(ufSel && d.uf){ ufSel.value=d.uf; await carregarCidades(px); }
+    // Cidade
+    setTimeout(()=>{
+      const cidSel = document.getElementById(px+'-cidade');
+      if(!cidSel) return;
+      const opts = Array.from(cidSel.options);
+      const match = opts.find(o=>o.value.toLowerCase()===d.localidade.toLowerCase());
+      if(match) cidSel.value=match.value;
+      else{
+        const opt=document.createElement('option');
+        opt.value=d.localidade; opt.textContent=d.localidade; opt.selected=true;
+        cidSel.appendChild(opt);
+      }
+    },700);
+    if(hintEl){ hintEl.textContent='✅ Preenchido automaticamente!'; hintEl.className='form-success'; }
+    setTimeout(()=>{ const n=document.getElementById(px+'-num'); if(n) n.focus(); },300);
+  }catch(e){
+    cepEl.classList.remove('loading');
+    if(hintEl){ hintEl.textContent='⚠️ Erro ao buscar. Preencha manualmente.'; hintEl.className='form-hint'; }
+  }
+}
+
+// ════════════════════════════════════════
+// CIDADES — IBGE API
+// ════════════════════════════════════════
+async function carregarCidades(prefix){
+  const px=prefix||'f';
+  const uf=document.getElementById(px+'-uf').value;
+  const sel=document.getElementById(px+'-cidade');
+  const hint=document.getElementById(px+'-cidade-hint')||document.getElementById('cidade-hint');
+  if(!uf){ sel.innerHTML='<option value="">Selecione o estado</option>'; sel.disabled=true; if(hint)hint.style.display='none'; return; }
+  sel.disabled=true;
+  sel.innerHTML='<option value="">Carregando cidades...</option>';
+  if(hint){hint.textContent='⏳ Buscando cidades...';hint.style.display='block';}
+  try{
+    const r=await fetch('https://servicodados.ibge.gov.br/api/v1/localidades/estados/'+uf+'/municipios?orderBy=nome');
+    const cidades=await r.json();
+    sel.innerHTML='<option value="">Selecione a cidade...</option>'+cidades.map(function(c){return '<option value="'+c.nome+'">'+c.nome+'</option>';}).join('');
+    sel.disabled=false;
+    if(hint){hint.textContent='✅ '+cidades.length+' cidades carregadas';}
+    hint.className='form-success';
+    hint.style.display='block';
+    setTimeout(()=>{ hint.style.display='none'; },3000);
+  }catch(e){
+    sel.innerHTML='<option value="">Erro ao carregar</option>';
+    sel.disabled=false;
+    hint.textContent='⚠️ Erro ao carregar cidades. Digite manualmente.';
+    hint.style.display='block';
+  }
+}
+
+// ════════════════════════════════════════
+// STARS
+// ════════════════════════════════════════
+function setRating(n){
+  currentRating=n;
+  document.querySelectorAll('.star').forEach(s=>{
+    s.textContent=parseInt(s.dataset.v)<=n?'★':'☆';
+    s.style.color=parseInt(s.dataset.v)<=n?'#e8a000':'#ccc';
+  });
+  const labels=['','Ruim','Regular','Bom','Muito bom','Excelente!'];
+  document.getElementById('rating-label').textContent=labels[n]||'';
+}
+
+// ════════════════════════════════════════
+// SALVAR PRESTADOR
+// ════════════════════════════════════════
+function salvarPrestador(){
+  const nome=document.getElementById('f-nome').value.trim();
+  const catRaw=document.getElementById('f-cat').value;
+  const rua=document.getElementById('f-rua').value.trim();
+  const uf=document.getElementById('f-uf').value;
+  const cidade=document.getElementById('f-cidade').value;
+  const cep=document.getElementById('f-cep').value.trim();
+
+  if(!nome){showToast('⚠️ Informe o nome do prestador');return;}
+  if(!catRaw){showToast('⚠️ Selecione uma categoria');return;}
+  if(!rua){showToast('⚠️ Informe a rua/logradouro');return;}
+  if(!uf){showToast('⚠️ Selecione o estado');return;}
+  if(!cidade){showToast('⚠️ Selecione a cidade');return;}
+
+  // Parse categoria (remove emoji prefix)
+  const cat=catRaw.replace(/^[\p{Emoji}\s]+/u,'').trim();
+  const num=document.getElementById('f-num').value.trim();
+  const comp=document.getElementById('f-comp').value.trim();
+  const bairro=document.getElementById('f-bairro').value.trim();
+
+  const enderecoCompleto=[rua, num&&('nº '+num), comp, bairro, cidade+'/'+uf, cep&&('CEP '+cep)].filter(Boolean).join(', ');
+
+  const p={
+    id:Date.now(),
+    nome, categoria:cat,
+    especialidade:document.getElementById('f-espec').value.trim(),
+    telefone:document.getElementById('f-tel').value.trim(),
+    whatsapp:document.getElementById('f-wpp').value.trim(),
+    disponibilidade:document.getElementById('f-disp').value,
+    valor:document.getElementById('f-valor').value.trim(),
+    rating:currentRating||5,
+    rua, num, comp, bairro, cidade, uf, cep,
+    endereco:enderecoCompleto,
+    lat:null, lng:null
+  };
+
+  const list=loadProviders();
+  list.push(p);
+  saveProviders(list);
+
+  if(geocoder) geocodeProvider(p);
+
+  closeModal("modal-cadastro");
+  clearForm();
+  updateBadge();
+  renderHomeProviders();
+  showToast('✅ Prestador cadastrado com sucesso!');
+}
+
+function clearForm(){
+  ['f-nome','f-espec','f-tel','f-wpp','f-valor','f-cep','f-rua','f-num','f-comp','f-bairro'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('f-cat').value='';
+  document.getElementById('f-disp').value='Disponível agora';
+  document.getElementById('f-uf').value='';
+  document.getElementById('f-cidade').innerHTML='<option value="">Selecione o estado</option>';
+  document.getElementById('f-cidade').disabled=true;
+  document.getElementById('f-cep-hint').textContent='Digite o CEP para preencher automaticamente';
+  document.getElementById('f-cep-hint').className='form-hint';
+  document.getElementById('cidade-hint').style.display='none';
+  currentRating=0;
+  document.querySelectorAll('.star').forEach(s=>{ s.textContent='☆'; s.style.color=''; });
+  document.getElementById('rating-label').textContent='Toque para avaliar';
+}
+
+function enderecoGeo(p){
+  // Monta endereço otimizado para geocoding
+  // Remove caracteres problemáticos e acentos do número
+  var rua = (p.rua||'').trim();
+  var num = (p.num||'').replace(/[^\d]/g,'').trim(); // só dígitos
+  var parts = [];
+  if(rua) parts.push(num ? rua + ', ' + num : rua);
+  if(p.bairro) parts.push((p.bairro||'').trim());
+  if(p.cidade) parts.push((p.cidade||'').trim());
+  if(p.uf)     parts.push((p.uf||'').trim());
+  parts.push('Brasil');
+  var addr = parts.filter(Boolean).join(', ');
+  console.log('[enderecoGeo]', addr);
+  return addr;
+}
+
+function geocodeProvider(p){
+  var addr = enderecoGeo(p);
+  geocoder.geocode({address: addr, region: 'br'}, function(results, status){
+    if(status==='OK' && results[0]){
+      var loc = results[0].geometry.location;
+      var list = loadProviders();
+      var idx = list.findIndex(function(x){ return x.id===p.id; });
+      if(idx>=0){ list[idx].lat=loc.lat(); list[idx].lng=loc.lng(); saveProviders(list); }
+    } else if(status==='ZERO_RESULTS' && p.cidade && p.uf){
+      // Fallback: só cidade/estado
+      var fb = p.cidade + ', ' + p.uf + ', Brasil';
+      geocoder.geocode({address: fb, region:'br'}, function(r2, s2){
+        if(s2==='OK' && r2[0]){
+          var loc = r2[0].geometry.location;
+          var list = loadProviders();
+          var idx = list.findIndex(function(x){ return x.id===p.id; });
+          if(idx>=0){ list[idx].lat=loc.lat(); list[idx].lng=loc.lng(); saveProviders(list); }
+        }
+      });
+    }
+  });
+}
+
+// ════════════════════════════════════════
+// RENDER: HOME
+// ════════════════════════════════════════
+function renderHomeProviders(){
+  const list=loadProviders();
+  const el=document.getElementById('home-providers');
+  if(!list.length){
+    el.innerHTML=`<div class="empty-state"><div class="empty-icon">📋</div><p>Nenhum prestador cadastrado.<br>Vá em <strong>Buscar</strong> para adicionar.</p></div>`;
+    return;
+  }
+  el.innerHTML=list.slice(0,6).map(p=>providerRow(p)).join('');
+  if(userLat&&distMatrixService) setTimeout(()=>calcDistancesForList(list),800);
+}
+
+// ════════════════════════════════════════
+// RENDER: BUSCAR — getCategorias()
+// ════════════════════════════════════════
+// ── BUSCAR: lógica de um único painel ───────────────────────────────────────
+let searchTimer = null;
+
+function scheduleSearch(){
+  // Lê o valor IMEDIATAMENTE (antes de qualquer re-render)
+  const q = (document.getElementById('search-input').value || '').trim();
+  clearTimeout(searchTimer);
+  if(!q && !activeCatFilter){ showCats(); return; }
+  // Debounce só para evitar excesso de chamadas, mas preservando o valor capturado
+  searchTimer = setTimeout(function(){ doSearch(q); }, 250);
+}
+
+// Normaliza acentos para comparação: "Cecília" == "cecilia"
+function norm(s){
+  return (s||'').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+}
+
+function doSearch(qParam){
+  // Aceita valor passado (capturado no momento do input) ou lê do campo
+  const raw = qParam !== undefined ? qParam : (document.getElementById('search-input').value||'');
+  const q = norm(raw);
+  if(!q && !activeCatFilter){ showCats(); return; }
+  let list = loadProviders();
+  if(activeCatFilter) list = list.filter(function(p){ return p.categoria===activeCatFilter; });
+  if(q) list = list.filter(function(p){
+    return norm(p.nome).includes(q) ||
+           norm(p.categoria).includes(q) ||
+           norm(p.especialidade).includes(q) ||
+           norm(p.cidade).includes(q) ||
+           norm(p.bairro).includes(q);
+  });
+  showResults(list, raw || activeCatFilter);
+}
+
+function toggleFavorito(id){
+  const list=loadProviders();
+  const idx=list.findIndex(function(x){return x.id===id;});
+  if(idx<0) return;
+  list[idx].favorito=!list[idx].favorito;
+  saveProviders(list);
+  // Re-render apenas o botão sem re-fazer tudo
+  doSearch(document.getElementById('search-input').value||'');
+  renderHomeProviders();
+  showToast(list[idx].favorito?'⭐ Adicionado aos favoritos':'☆ Removido dos favoritos');
+}
+
+function favoritoRow(p){
+  const cat=getCategorias().find(function(c){return c.nome===p.categoria;})||{emoji:'🔩',bg:'#f5f5f5'};
+  const dispColor={'Disponível agora':'#2a7d3f','Somente agendamento':'#1a56a0','Ocupado':'#888'};
+  const dispDot={'Disponível agora':'🟢','Somente agendamento':'🔵','Ocupado':'⚫'};
+  const dot=dispDot[p.disponibilidade]||'⚫';
+  const dcolor=dispColor[p.disponibilidade]||'#888';
+  const stars='★'.repeat(p.rating||0)+'☆'.repeat(5-(p.rating||0));
+  return '<div style="background:var(--white);border-radius:var(--radius);border:.5px solid var(--border);padding:14px;margin-bottom:8px">'
+    // Header: avatar + nome + status
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
+      +'<div style="width:44px;height:44px;border-radius:50%;background:'+cat.bg+';display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;cursor:pointer" onclick="showProviderDetail('+p.id+')">'+cat.emoji+'</div>'
+      +'<div style="flex:1;min-width:0;cursor:pointer" onclick="showProviderDetail('+p.id+')">'
+        +'<div style="display:flex;align-items:center;gap:5px">'
+          +'<span style="font-size:14px;font-weight:600">'+p.nome+'</span>'
+          +'<span style="font-size:10px">'+dot+'</span>'
+        +'</div>'
+        +'<div style="font-size:12px;color:var(--text-muted)">'+p.categoria+(p.especialidade?' · '+p.especialidade:'')+'</div>'
+        +'<div style="font-size:11px;font-weight:600;color:'+dcolor+';margin-top:1px">'+p.disponibilidade+'</div>'
+      +'</div>'
+      +'<button onclick="toggleFavorito('+p.id+');filtrarFavoritos()" style="background:none;border:none;cursor:pointer;font-size:20px;color:#e8a000;padding:2px">⭐</button>'
+    +'</div>'
+    // Info: endereço + distância + avaliação
+    +'<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-muted);margin-bottom:10px">'
+      +'<span>📍 '+(p.bairro||'')+(p.cidade?', '+p.cidade:'')+'</span>'
+      +'<span style="color:#e8a000">'+stars+'</span>'
+    +'</div>'
+    // Telefone em destaque
+    +(p.telefone
+      ? '<div style="display:flex;align-items:center;gap:8px;background:#f0f6ff;border-radius:10px;padding:8px 12px;margin-bottom:10px">'
+          +'<span style="font-size:16px">📞</span>'
+          +'<div style="flex:1">'
+            +'<div style="font-size:11px;color:var(--text-muted)">Telefone</div>'
+            +'<div style="font-size:14px;font-weight:600;color:var(--blue)">'+p.telefone+'</div>'
+          +'</div>'
+          +'<a href="tel:'+p.telefone+'" style="background:var(--blue);color:#fff;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:500;text-decoration:none">Ligar</a>'
+          +(p.whatsapp?'<a href="https://wa.me/'+p.whatsapp+'" target="_blank" style="background:#25d366;color:#fff;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:500;text-decoration:none">WhatsApp</a>':'')
+        +'</div>'
+      : '<div style="font-size:12px;color:#aaa;margin-bottom:10px">📞 Telefone não cadastrado</div>'
+    )
+    // Distância
+    +'<div style="display:flex;gap:6px;font-size:12px;color:var(--text-muted);margin-bottom:10px">'
+      +'<span>📏 <span id="dist-fav-'+p.id+'" style="font-weight:600;color:var(--blue)">—</span></span>'
+      +'<span>⏱ <span id="time-fav-'+p.id+'">calculando...</span></span>'
+    +'</div>'
+    // Ações
+    +'<div style="display:flex;gap:8px">'
+      +'<button onclick="showProviderDetail('+p.id+')" style="flex:1;border:1px solid var(--blue);background:var(--white);color:var(--blue);border-radius:10px;padding:8px 0;font-size:13px;font-weight:500;cursor:pointer">Ver detalhes</button>'
+      +'<button onclick="selectProvider('+p.id+')" style="flex:1;background:var(--blue);color:#fff;border:none;border-radius:10px;padding:8px 0;font-size:13px;font-weight:500;cursor:pointer">📍 Ver no mapa</button>'
+    +'</div>'
+  +'</div>';
+}
+
+function calcDistancesForFavs(list){
+  // Geocodifica os que ainda não têm lat antes de calcular
+  list.forEach(function(p){
+    if(!p.lat && geocoder){
+      geocoder.geocode({address: enderecoGeo(p), region:'br'}, function(results, status){
+        if(status==='OK' && results[0]){
+          var loc = results[0].geometry.location;
+          var all = loadProviders();
+          var idx = all.findIndex(function(x){return x.id===p.id;});
+          if(idx>=0){ all[idx].lat=loc.lat(); all[idx].lng=loc.lng(); saveProviders(all); }
+          // Update dist/time for this fav card
+          distMatrixService.getDistanceMatrix({
+            origins:[new google.maps.LatLng(userLat,userLng)],
+            destinations:[new google.maps.LatLng(loc.lat(),loc.lng())],
+            travelMode:google.maps.TravelMode.DRIVING,
+            unitSystem:google.maps.UnitSystem.METRIC,language:'pt-BR'
+          },function(resp,st){
+            if(st!=='OK') return;
+            var el=resp.rows[0].elements[0];
+            if(el.status!=='OK') return;
+            var d=document.getElementById('dist-fav-'+p.id);
+            var t=document.getElementById('time-fav-'+p.id);
+            if(d) d.textContent=el.distance.text;
+            if(t) t.textContent=el.duration.text;
+          });
+        }
+      });
+    }
+  });
+  const wc=list.filter(function(p){return p.lat;});
+  if(!wc.length||!distMatrixService||!userLat) return;
+  distMatrixService.getDistanceMatrix({
+    origins:[new google.maps.LatLng(userLat,userLng)],
+    destinations:wc.map(function(p){return new google.maps.LatLng(p.lat,p.lng);}),
+    travelMode:google.maps.TravelMode.DRIVING,
+    unitSystem:google.maps.UnitSystem.METRIC,language:'pt-BR'
+  },function(resp,status){
+    if(status!=='OK') return;
+    wc.forEach(function(p,i){
+      const el=resp.rows[0].elements[i];
+      if(el.status!=='OK') return;
+      const d=document.getElementById('dist-fav-'+p.id);
+      const t=document.getElementById('time-fav-'+p.id);
+      if(d) d.textContent=el.distance.text;
+      if(t) t.textContent=el.duration.text;
+    });
+  });
+}
+
+function filtrarFavoritos(){
+  activeCatFilter=null;
+  document.getElementById('search-input').value='';
+  const list=loadProviders().filter(function(p){return p.favorito;});
+  document.getElementById('result-title').textContent='⭐ Favoritos';
+  document.getElementById('result-count').textContent=list.length+' prestador'+(list.length!==1?'es':'');
+  document.getElementById('buscar-back-row').style.display='flex';
+  document.getElementById('buscar-section-label').textContent='';
+  document.getElementById('cat-grid').style.display='none';
+  const el=document.getElementById('results-list');
+  el.style.display='block';
+  if(!list.length){
+    el.innerHTML='<div class="empty-state"><div class="empty-icon">⭐</div><p>Nenhum favorito ainda.<br>Toque na ☆ ao lado de um prestador.</p></div>';
+  } else {
+    el.innerHTML=list.map(function(p){return favoritoRow(p);}).join('');
+    if(userLat&&distMatrixService) setTimeout(function(){calcDistancesForFavs(list);},500);
+  }
+}
+
+function showCats(){
+  // mostra grade de categorias, esconde resultados
+  document.getElementById('cat-grid').style.display = 'grid';
+  document.getElementById('results-list').style.display = 'none';
+  document.getElementById('buscar-back-row').style.display = 'none';
+  document.getElementById('buscar-section-label').textContent = 'Categorias disponíveis';
+  renderCatGrid();
+}
+
+function showResults(list, label){
+  const catObj = activeCatFilter ? getCategorias().find(c=>c.nome===activeCatFilter) : null;
+  const title  = catObj ? (catObj.emoji+' '+catObj.nome) : ('Resultados para "'+label+'"');
+  const count  = list.length + ' prestador' + (list.length!==1?'es':'') + ' encontrado' + (list.length!==1?'s':'');
+
+  document.getElementById('result-title').textContent = title;
+  document.getElementById('result-count').textContent = count;
+  document.getElementById('buscar-back-row').style.display = 'flex';
+  document.getElementById('buscar-section-label').textContent = '';
+  document.getElementById('cat-grid').style.display = 'none';
+
+  const el = document.getElementById('results-list');
+  el.style.display = 'block';
+
+  if(!list.length){
+    const catLabel = activeCatFilter || label;
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">'+(catObj?catObj.emoji:'🔍')+'</div>'
+      + '<p>Nenhum prestador encontrado.<br>'
+      + '<span onclick="openModal(&quot;modal-cadastro&quot;)" style="color:var(--blue);cursor:pointer;font-weight:600">+ Cadastrar prestador</span></p></div>';
+    return;
+  }
+  el.innerHTML = list.map(function(p){ return providerRow(p); }).join('');
+  // Restore focus to search input after DOM update
+  var inp = document.getElementById('search-input');
+  if(inp && document.activeElement !== inp){
+    var v = inp.value, pos = inp.selectionStart;
+    inp.focus();
+    try{ inp.setSelectionRange(pos,pos); }catch(e){}
+  }
+  if(userLat && distMatrixService) setTimeout(function(){ calcDistancesForList(list); }, 600);
+}
+
+function renderCatGrid(){
+  const list = loadProviders();
+  const counts = {};
+  list.forEach(function(p){ counts[p.categoria]=(counts[p.categoria]||0)+1; });
+  const grid = document.getElementById('cat-grid');
+  grid.innerHTML = getCategorias().map(function(c){
+    const n = counts[c.nome]||0;
+    const active = activeCatFilter===c.nome ? ' active' : '';
+    const opac  = n ? '' : 'opacity:.55';
+    const cnt   = n ? (n+' prestador'+(n>1?'es':'')) : 'Nenhum cadastrado';
+    return [
+      '<div class="cat-card-search'+active+'"',
+      ' data-cat="'+c.nome+'"',
+      ' onclick="filtrarCategoria(this.dataset.cat)"',
+      ' style="'+opac+'">',
+      '<div class="cat-emoji">'+c.emoji+'</div>',
+      '<div class="cat-name">'+c.nome+'</div>',
+      '<div class="cat-count">'+cnt+'</div>',
+      '</div>'
+    ].join('');
+  }).join('');
+}
+
+function filtrarCategoria(cat){
+  activeCatFilter = cat;
+  doSearch();
+}
+
+function voltarCats(){
+  activeCatFilter = null;
+  document.getElementById('search-input').value = '';
+  showCats();
+}
+
+function clearSearch(){
+  clearTimeout(searchTimer);
+  activeCatFilter = null;
+  document.getElementById('search-input').value = '';
+  showCats();
+}
+
+function renderBuscar(){
+  showCats();
+}
+
+
+
+// ════════════════════════════════════════
+// RENDER: GERENCIAR
+// ════════════════════════════════════════
+function renderGerenciar(){
+  const list=loadProviders();
+  document.getElementById('gerenciar-sub').textContent=list.length+' prestador'+(list.length!==1?'es':'')+' cadastrado'+(list.length!==1?'s':'');
+  const el=document.getElementById('gerenciar-list');
+  if(!list.length){
+    el.innerHTML=`<div class="empty-state" style="background:var(--white);border-radius:var(--radius);padding:32px 16px;border:.5px solid var(--border)"><div class="empty-icon">👤</div><p>Nenhum prestador cadastrado.<br>Toque em <strong>+ Novo</strong> para começar.</p></div>`;
+    return;
+  }
+  el.innerHTML=list.map(p=>{
+    const cat=getCategorias().find(c=>c.nome===p.categoria)||{emoji:'🔩',bg:'#f5f5f5'};
+    const badge=DISP_BADGE[p.disponibilidade]||'badge-gray';
+    const stars='★'.repeat(p.rating)+'☆'.repeat(5-p.rating);
+    return `<div class="card" style="margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="prov-avatar" style="background:${cat.bg}">${cat.emoji}</div>
+        <div style="flex:1">
+          <div class="card-title">${p.nome}</div>
+          <div class="card-sub">${p.categoria}${p.especialidade?' · '+p.especialidade:''}</div>
+          <div class="card-sub" style="margin-top:2px">📍 ${p.rua}${p.num?', '+p.num:''} — ${p.bairro}, ${p.cidade}/${p.uf}</div>
+          ${p.cep?`<div class="card-sub">CEP: ${p.cep}</div>`:''}
+          <div style="color:#e8a000;font-size:12px;margin-top:2px">${stars}</div>
+        </div>
+        <span class="badge ${badge}" style="align-self:flex-start">${p.disponibilidade}</span>
+      </div>
+      <div class="actions-row" style="margin-top:10px">
+        <button class="btn btn-outline" onclick="showProviderDetail(${p.id})" style="flex:1">Ver</button>
+        <button class="btn btn-primary" onclick="selectProvider(${p.id})" style="flex:1">📍 Mapa</button>
+        <button class="btn btn-red btn-icon" onclick="deletarPrestador(${p.id})">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function deletarPrestador(id){
+  if(!confirm('Remover este prestador?')) return;
+  var newList = loadProviders().filter(function(p){ return p.id!==id; });
+  window._providers = newList;
+  localStorage.setItem('sf_providers', JSON.stringify(newList));
+  if(window.fbDeleteProvider) window.fbDeleteProvider(id);
+  renderGerenciar(); renderHomeProviders(); updateBadge();
+  showToast('🗑 Prestador removido');
+}
+
+function updateBadge(){
+  const n=loadProviders().length;
+  const b=document.getElementById('count-badge');
+  b.style.display=n?'block':'none';
+  b.textContent=n;
+}
+
+// ════════════════════════════════════════
+// PROVIDER ROW (shared)
+// ════════════════════════════════════════
+function providerRow(p){
+  const cat=getCategorias().find(c=>c.nome===p.categoria)||{emoji:'🔩',bg:'#f5f5f5'};
+  const stars='★'.repeat(p.rating||0)+'☆'.repeat(5-(p.rating||0));
+  const dispColor={'Disponível agora':'#2a7d3f','Somente agendamento':'#1a56a0','Ocupado':'#888'};
+  const dispDot={'Disponível agora':'🟢','Somente agendamento':'🔵','Ocupado':'⚫'};
+  const dot=dispDot[p.disponibilidade]||'⚫';
+  const dcolor=dispColor[p.disponibilidade]||'#888';
+  const fav=p.favorito?'⭐':'☆';
+  const favColor=p.favorito?'#e8a000':'#ccc';
+  return '<div class="provider-item">'
+    +'<div class="prov-avatar" style="background:'+cat.bg+'" onclick="showProviderDetail('+p.id+')">'+cat.emoji+'</div>'
+    +'<div style="flex:1;min-width:0" onclick="showProviderDetail('+p.id+')">'
+      +'<div style="display:flex;align-items:center;gap:5px">'
+        +'<div class="prov-name">'+p.nome+'</div>'
+        +'<span style="font-size:10px">'+dot+'</span>'
+      +'</div>'
+      +'<div class="prov-meta">'+p.categoria+(p.especialidade?' · '+p.especialidade:'')+'</div>'
+      +'<div class="prov-meta">📍 '+(p.bairro||'')+(p.cidade?', '+p.cidade:'')+'</div>'
+      +'<div style="font-size:11px;font-weight:600;color:'+dcolor+';margin-top:2px">'+p.disponibilidade+'</div>'
+    +'</div>'
+    +'<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">'
+      +'<button onclick="event.stopPropagation();toggleFavorito('+p.id+')" style="background:none;border:none;cursor:pointer;font-size:22px;color:'+favColor+';padding:2px 4px;line-height:1">'+fav+'</button>'
+      +'<div style="font-size:11px;color:#e8a000">'+stars+'</div>'
+      +'<div class="prov-dist" id="dist-'+p.id+'">—</div>'
+      +'<div class="prov-time" id="time-'+p.id+'"></div>'
+    +'</div>'
+  +'</div>';
+}
+
+// ════════════════════════════════════════
+// DETALHE PRESTADOR
+// ════════════════════════════════════════
+function showProviderDetail(id){
+  const p=loadProviders().find(x=>x.id===id);
+  if(!p) return;
+  selectedProvider=p;
+  const cat=getCategorias().find(c=>c.nome===p.categoria)||{emoji:'🔩',bg:'#f5f5f5'};
+  const badge=DISP_BADGE[p.disponibilidade]||'badge-gray';
+  const stars='★'.repeat(p.rating||0)+'☆'.repeat(5-(p.rating||0));
+  document.getElementById('modal-provider-content').innerHTML=`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+      <div style="width:52px;height:52px;border-radius:50%;background:${cat.bg};display:flex;align-items:center;justify-content:center;font-size:26px">${cat.emoji}</div>
+      <div style="flex:1">
+        <div style="font-size:17px;font-weight:600">${p.nome}</div>
+        <div style="font-size:13px;color:var(--text-muted)">${p.categoria}${p.especialidade?' · '+p.especialidade:''}</div>
+        <div style="color:#e8a000;font-size:15px;margin-top:2px">${stars}</div>
+      </div>
+      <span class="badge ${badge}">${p.disponibilidade}</span>
+    </div>
+    <div class="divider"></div>
+    <div class="meta-row"><span class="meta-label">🏠 Rua</span><span class="meta-value" style="font-size:12px">${p.rua}${p.num?', nº '+p.num:''}</span></div>
+    ${p.comp?`<div class="meta-row"><span class="meta-label">🏢 Compl.</span><span class="meta-value" style="font-size:12px">${p.comp}</span></div>`:''}
+    <div class="meta-row"><span class="meta-label">🏘 Bairro</span><span class="meta-value" style="font-size:12px">${p.bairro||'—'}</span></div>
+    <div class="meta-row"><span class="meta-label">🏙 Cidade</span><span class="meta-value" style="font-size:12px">${p.cidade||'—'}/${p.uf||'—'}</span></div>
+    ${p.cep?`<div class="meta-row"><span class="meta-label">📮 CEP</span><span class="meta-value" style="font-size:12px">${p.cep}</span></div>`:''}
+    ${p.telefone?`<div class="meta-row"><span class="meta-label">📞 Telefone</span><span class="meta-value">${p.telefone}</span></div>`:''}
+    ${p.valor?`<div class="meta-row"><span class="meta-label">💰 Valor</span><span class="meta-value green">${p.valor}</span></div>`:''}
+    <div class="meta-row"><span class="meta-label">📏 Distância</span><span class="meta-value blue" id="detail-dist">Calculando...</span></div>
+    <div class="meta-row"><span class="meta-label">⏱ Tempo</span><span class="meta-value green" id="detail-time">—</span></div>
+    <div style="margin-bottom:4px"><button onclick="retryGeoDetail(${p.id})" style="font-size:12px;color:var(--blue);background:none;border:.5px solid var(--blue);border-radius:8px;padding:4px 10px;cursor:pointer">🔄 Recalcular distância</button></div>
+    <div class="divider"></div>
+    <div class="actions-row">
+      <button class="btn btn-primary" onclick="selectProvider(${p.id})">📍 Ver no mapa</button>
+      ${p.telefone?`<a href="tel:${p.telefone}" class="btn btn-outline btn-icon">📞</a>`:''}
+      ${p.whatsapp?`<a href="https://wa.me/${p.whatsapp}" class="btn btn-green btn-icon" target="_blank">💬</a>`:''}
+    </div>
+    <div class="actions-row">
+      <button class="btn btn-outline" onclick="openMapsRouteToProvider(${p.id})">🧭 Rota</button>
+      <button class="btn btn-outline" style="color:#b25a00;border-color:#b25a00" onclick="closeModal('modal-provider');abrirEdicao(${p.id})">✏️ Editar</button>
+    </div>`;
+  openModal("modal-provider");
+  if(userLat&&distMatrixService) calcDistanceForDetail(p);
+}
+
+function selectProvider(id){
+  const p=loadProviders().find(function(x){return x.id===id;});
+  if(!p) return;
+  selectedProvider=p;
+  // Fecha qualquer modal aberto antes de trocar de view
+  ['modal-provider','modal-cadastro','modal-editar','modal-cats','modal-perfil'].forEach(function(m){
+    var el=document.getElementById(m);
+    if(el) el.classList.remove('show');
+  });
+  switchView('home');
+  document.getElementById('dest-label').textContent=p.nome+(p.cidade?' — '+p.cidade:'');
+  document.getElementById('distance-card').style.display='block';
+  document.getElementById('info-pill').style.display='flex';
+  document.getElementById('expand-map-btn').style.display='flex';
+
+  function mostrarNoMapa(lat,lng){
+    if(!map) return;
+    updateProviderMarker(lat,lng,p.nome);
+    drawRoute(lat,lng);
+    loadDistanceMatrix(lat,lng);
+    // Atualiza pill imediatamente com geocode se distMatrix ainda carregando
+    document.getElementById('pill-dist').textContent='...';
+    document.getElementById('pill-time').textContent='...';
+  }
+
+  if(p.lat){
+    mostrarNoMapa(p.lat,p.lng);
+  } else if(geocoder){
+    showToast('⏳ Localizando endereço...');
+    var geoAddr = enderecoGeo(p);
+    geocoder.geocode({address: geoAddr, region: 'br'}, function(results,status){
+      if(status==='OK' && results[0]){
+        var loc=results[0].geometry.location;
+        var list=loadProviders();
+        var idx=list.findIndex(function(x){return x.id===p.id;});
+        if(idx>=0){ list[idx].lat=loc.lat(); list[idx].lng=loc.lng(); saveProviders(list); selectedProvider=list[idx]; }
+        mostrarNoMapa(loc.lat(), loc.lng());
+      } else if(status==='ZERO_RESULTS' && p.cidade && p.uf){
+        // Fallback cidade
+        var fb = (p.cidade||'') + ', ' + (p.uf||'') + ', Brasil';
+        geocoder.geocode({address: fb, region:'br'}, function(r2, s2){
+          if(s2==='OK' && r2[0]){
+            var loc2=r2[0].geometry.location;
+            var list2=loadProviders();
+            var idx2=list2.findIndex(function(x){return x.id===p.id;});
+            if(idx2>=0){ list2[idx2].lat=loc2.lat(); list2[idx2].lng=loc2.lng(); saveProviders(list2); selectedProvider=list2[idx2]; }
+            mostrarNoMapa(loc2.lat(), loc2.lng());
+            showToast('⚠️ Posição aproximada (cidade)');
+          } else {
+            showToast('❌ Cidade/estado não encontrada');
+          }
+        });
+      } else {
+        showToast('❌ Endereço não encontrado ('+status+')');
+      }
+    });
+  } else {
+    showToast('⚠️ Sem coordenadas. Verifique o endereço.');
+  }
+}
+
+function openMapsRouteToProvider(id){
+  const p=loadProviders().find(x=>x.id===id);
+  if(!p) return;
+  const orig=userLat?`${userLat},${userLng}`:'current+location';
+  const dest=p.lat?`${p.lat},${p.lng}`:encodeURIComponent(p.endereco);
+  const mode=currentMode==='DRIVING'?'driving':currentMode==='WALKING'?'walking':'transit';
+  window.open(`https://www.google.com/maps/dir/?api=1&origin=${orig}&destination=${dest}&travelmode=${mode}`,'_blank');
+}
+
+
+function retryGeoDetail(id){
+  if(!geocoder){ showToast('❌ Maps não carregado'); return; }
+  const list = loadProviders();
+  const idx = list.findIndex(function(x){return x.id===id;});
+  if(idx<0) return;
+  // Force clear lat/lng so geocoding runs fresh
+  list[idx].lat=null; list[idx].lng=null;
+  saveProviders(list);
+  const p = list[idx];
+  const dd=document.getElementById('detail-dist');
+  const dt=document.getElementById('detail-time');
+  if(dd) dd.textContent='Buscando...';
+  if(dt) dt.textContent='calculando...';
+  var addr = enderecoGeo(p);
+  showToast('🔄 Buscando: '+addr);
+  calcDistanceForDetail(p);
+}
+
+// ════════════════════════════════════════
+// GOOGLE MAPS
+// ════════════════════════════════════════
+function loadGoogleMaps(){
+  if(document.getElementById('gmaps-script')) return;
+  const s=document.createElement('script');
+  s.id='gmaps-script';
+  s.src=`https://maps.googleapis.com/maps/api/js?key=${GMAPS_KEY}&libraries=geometry&language=pt-BR&callback=initMap`;
+  s.async=true; s.defer=true;
+  document.head.appendChild(s);
+}
+
+window.initMap=function(){
+  const mapEl=document.getElementById('map');
+  const ph=document.getElementById('map-placeholder');
+  if(ph) ph.remove();
+  const center=userLat?{lat:userLat,lng:userLng}:{lat:-22.2450,lng:-43.7020};
+  map=new google.maps.Map(mapEl,{center,zoom:14,disableDefaultUI:true,zoomControl:true,gestureHandling:'greedy',styles:[{featureType:'poi',stylers:[{visibility:'off'}]}]});
+  directionsService=new google.maps.DirectionsService();
+  directionsRenderer=new google.maps.DirectionsRenderer({map,suppressMarkers:true,polylineOptions:{strokeColor:'#1a56a0',strokeWeight:4,strokeOpacity:.85}});
+  distMatrixService=new google.maps.DistanceMatrixService();
+  geocoder=new google.maps.Geocoder();
+  if(userLat) updateUserMarker();
+  // Geocode all without coords using optimized address
+  setTimeout(function(){
+    loadProviders().forEach(function(p){ if(!p.lat) geocodeProvider(p); });
+  }, 1500); // slight delay to ensure geocoder is ready
+};
+
+function updateUserMarker(){
+  const pos={lat:userLat,lng:userLng};
+  if(!userMarker){
+    userMarker=new google.maps.Marker({position:pos,map,icon:{path:google.maps.SymbolPath.CIRCLE,scale:9,fillColor:'#1a56a0',fillOpacity:1,strokeColor:'#fff',strokeWeight:2.5},title:'Você',zIndex:10});
+    new google.maps.Circle({map,center:pos,radius:80,fillColor:'#1a56a0',fillOpacity:.1,strokeColor:'#1a56a0',strokeOpacity:.3,strokeWeight:1});
+  } else userMarker.setPosition(pos);
+  map.panTo(pos);
+}
+
+function updateProviderMarker(lat,lng,nome){
+  const pos={lat,lng};
+  if(!providerMarker){
+    providerMarker=new google.maps.Marker({position:pos,map,icon:{path:google.maps.SymbolPath.CIRCLE,scale:10,fillColor:'#d03030',fillOpacity:1,strokeColor:'#fff',strokeWeight:2},title:nome});
+  } else providerMarker.setPosition(pos);
+  const iw=new google.maps.InfoWindow({content:`<div style="font-size:13px;font-weight:600;color:#1a56a0">${nome}</div>`});
+  iw.open(map,providerMarker);
+  const bounds=new google.maps.LatLngBounds();
+  if(userLat) bounds.extend({lat:userLat,lng:userLng});
+  bounds.extend(pos);
+  map.fitBounds(bounds,60);
+}
+
+function drawRoute(lat,lng){
+  if(!directionsService||!userLat) return;
+  directionsService.route({origin:{lat:userLat,lng:userLng},destination:{lat,lng},travelMode:google.maps.TravelMode[currentMode]},(res,status)=>{ if(status==='OK') directionsRenderer.setDirections(res); });
+}
+
+function loadDistanceMatrix(lat,lng){
+  if(!distMatrixService||!userLat) return;
+  distMatrixService.getDistanceMatrix({
+    origins:[new google.maps.LatLng(userLat,userLng)],
+    destinations:[new google.maps.LatLng(lat,lng)],
+    travelMode:google.maps.TravelMode[currentMode],
+    drivingOptions:currentMode==='DRIVING'?{departureTime:new Date(),trafficModel:'bestguess'}:undefined,
+    unitSystem:google.maps.UnitSystem.METRIC,language:'pt-BR'
+  },(resp,status)=>{
+    if(status!=='OK') return;
+    const el=resp.rows[0].elements[0];
+    if(el.status!=='OK') return;
+    const dist=el.distance.text;
+    const dur=(currentMode==='DRIVING'&&el.duration_in_traffic)?el.duration_in_traffic.text:el.duration.text;
+    document.getElementById('dist-value').textContent=dist;
+    document.getElementById('time-value').textContent=dur;
+    document.getElementById('pill-dist').textContent=dist;
+    document.getElementById('pill-time').textContent=dur;
+    const b=document.getElementById('traffic-badge');
+    if(currentMode==='DRIVING'&&el.duration_in_traffic){
+      const r=el.duration_in_traffic.value/el.duration.value;
+      if(r<1.2){b.className='badge badge-green';b.textContent='🟢 Fluindo bem';}
+      else if(r<1.5){b.className='badge badge-orange';b.textContent='🟡 Moderado';}
+      else{b.className='badge';b.style.cssText='background:#fde;color:#c00';b.textContent='🔴 Intenso';}
+    } else { b.className='badge badge-blue'; b.textContent=currentMode==='WALKING'?'🚶 A pé':'🚌 Ônibus'; }
+  });
+}
+
+function calcDistancesForList(list){
+  const wc=list.filter(p=>p.lat);
+  if(!wc.length||!distMatrixService||!userLat) return;
+  distMatrixService.getDistanceMatrix({
+    origins:[new google.maps.LatLng(userLat,userLng)],
+    destinations:wc.map(p=>new google.maps.LatLng(p.lat,p.lng)),
+    travelMode:google.maps.TravelMode.DRIVING,
+    unitSystem:google.maps.UnitSystem.METRIC,language:'pt-BR'
+  },(resp,status)=>{
+    if(status!=='OK') return;
+    wc.forEach((p,i)=>{
+      const el=resp.rows[0].elements[i];
+      if(el.status!=='OK') return;
+      const d=document.getElementById('dist-'+p.id);
+      const t=document.getElementById('time-'+p.id);
+      if(d) d.textContent=el.distance.text;
+      if(t) t.textContent='~'+el.duration.text;
+    });
+  });
+}
+
+function calcDistanceForDetail(p){
+  if(!distMatrixService||!userLat) return;
+  function runMatrix(lat,lng){
+    distMatrixService.getDistanceMatrix({
+      origins:[new google.maps.LatLng(userLat,userLng)],
+      destinations:[new google.maps.LatLng(lat,lng)],
+      travelMode:google.maps.TravelMode.DRIVING,
+      unitSystem:google.maps.UnitSystem.METRIC,language:'pt-BR'
+    },function(resp,status){
+      var dd=document.getElementById('detail-dist');
+      var dt=document.getElementById('detail-time');
+      if(status==='OK' && resp.rows[0].elements[0].status==='OK'){
+        var el=resp.rows[0].elements[0];
+        if(dd) dd.textContent=el.distance.text;
+        if(dt) dt.textContent='~'+el.duration.text+' de carro';
+      } else {
+        // Fallback: distância em linha reta via Haversine
+        var R=6371;
+        var dLat=(lat-userLat)*Math.PI/180;
+        var dLon=(lng-userLng)*Math.PI/180;
+        var a=Math.sin(dLat/2)*Math.sin(dLat/2)+
+              Math.cos(userLat*Math.PI/180)*Math.cos(lat*Math.PI/180)*
+              Math.sin(dLon/2)*Math.sin(dLon/2);
+        var dist=R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+        var distStr=dist<1?(Math.round(dist*1000)+' m'):(dist.toFixed(1)+' km');
+        if(dd) dd.textContent=distStr+' (linha reta)';
+        if(dt) dt.textContent='Ative Distance Matrix API';
+        console.warn('[ServiçoFácil] Distance Matrix falhou:',status);
+      }
+    });
+  }
+  if(p.lat){
+    runMatrix(p.lat,p.lng);
+  } else if(geocoder){
+    var addr = enderecoGeo(p);
+    geocoder.geocode({address: addr, region: 'br'}, function(results, status){
+      if(status==='OK' && results[0]){
+        var loc = results[0].geometry.location;
+        var list = loadProviders();
+        var idx = list.findIndex(function(x){ return x.id===p.id; });
+        if(idx>=0){ list[idx].lat=loc.lat(); list[idx].lng=loc.lng(); saveProviders(list); }
+        runMatrix(loc.lat(), loc.lng());
+      } else if(status==='ZERO_RESULTS' && p.cidade && p.uf){
+        // Fallback: só cidade/estado
+        var fb = (p.cidade||'') + ', ' + (p.uf||'') + ', Brasil';
+        geocoder.geocode({address: fb, region:'br'}, function(r2, s2){
+          if(s2==='OK' && r2[0]){
+            var loc2 = r2[0].geometry.location;
+            // Salva coords da cidade como aproximação
+            var list2 = loadProviders();
+            var idx2 = list2.findIndex(function(x){return x.id===p.id;});
+            if(idx2>=0){list2[idx2].lat=loc2.lat();list2[idx2].lng=loc2.lng();saveProviders(list2);}
+            runMatrix(loc2.lat(), loc2.lng());
+            showToast('⚠️ Distância aproximada (cidade)');
+          } else {
+            var dd2=document.getElementById('detail-dist');
+            var dt2=document.getElementById('detail-time');
+            var dr2=document.getElementById('detail-retry');
+            if(dd2) dd2.textContent='Cidade não encontrada';
+            if(dt2) dt2.textContent='—';
+            if(dr2) dr2.style.display='block';
+          }
+        });
+      } else {
+        var dd = document.getElementById('detail-dist');
+        var dt = document.getElementById('detail-time');
+        var dr = document.getElementById('detail-retry');
+        if(dd) dd.textContent = 'Erro ('+status+')';
+        if(dt) dt.textContent = '—';
+        if(dr) dr.style.display='block';
+      }
+    });
+  }
+}
+
+function setTransport(mode,el){
+  currentMode=mode;
+  document.querySelectorAll('.transport-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  if(selectedProvider&&selectedProvider.lat){ loadDistanceMatrix(selectedProvider.lat,selectedProvider.lng); drawRoute(selectedProvider.lat,selectedProvider.lng); }
+}
+
+function refreshDistance(){ showToast('🔄 Atualizando...'); startGeolocation(); }
+function openMapsRoute(){ if(!selectedProvider){showToast('⚠️ Selecione um prestador primeiro');return;} openMapsRouteToProvider(selectedProvider.id); }
+
+let mapExpandedState=false;
+function toggleMap(){
+  mapExpandedState=!mapExpandedState;
+  document.getElementById('map').style.height=mapExpandedState?'400px':'240px';
+  document.getElementById('expand-map-btn').textContent=mapExpandedState?'⛶ Reduzir':'⛶ Expandir';
+  if(map) google.maps.event.trigger(map,'resize');
+}
+
+
+
+
+// ════════════════════════════════════════
+// EDITAR PRESTADOR
+// ════════════════════════════════════════
+async function abrirEdicao(id){
+  const p = loadProviders().find(x=>x.id===id);
+  if(!p) return;
+  document.getElementById('e-id').value    = p.id;
+  document.getElementById('e-nome').value  = p.nome||'';
+  document.getElementById('e-espec').value = p.especialidade||'';
+  document.getElementById('e-tel').value   = p.telefone||'';
+  document.getElementById('e-wpp').value   = p.whatsapp||'';
+  document.getElementById('e-disp').value  = p.disponibilidade||'Disponível agora';
+  document.getElementById('e-valor').value = p.valor||'';
+  document.getElementById('e-cep').value   = p.cep||'';
+  document.getElementById('e-rua').value   = p.rua||'';
+  document.getElementById('e-num').value   = p.num||'';
+  document.getElementById('e-comp').value  = p.comp||'';
+  document.getElementById('e-bairro').value= p.bairro||'';
+  document.getElementById('e-cep-hint').textContent = '';
+
+  // Populate category select
+  const catSel = document.getElementById('e-cat');
+  catSel.innerHTML = getCategorias().map(function(c){
+    return '<option value="'+c.nome+'"'+(c.nome===p.categoria?' selected':'')+'>'+c.emoji+' '+c.nome+'</option>';
+  }).join('');
+
+  // Load UF and cities
+  const ufSel = document.getElementById('e-uf');
+  ufSel.value = p.uf||'';
+  if(p.uf){
+    await carregarCidades('e');
+    setTimeout(function(){
+      const cidSel = document.getElementById('e-cidade');
+      const opts = Array.from(cidSel.options);
+      const match = opts.find(function(o){ return o.value===p.cidade; });
+      if(match) cidSel.value = match.value;
+    }, 800);
+  }
+
+  openModal('modal-editar');
+}
+
+function salvarEdicao(){
+  const id   = parseInt(document.getElementById('e-id').value);
+  const nome = document.getElementById('e-nome').value.trim();
+  const cat  = document.getElementById('e-cat').value;
+  const rua  = document.getElementById('e-rua').value.trim();
+  const uf   = document.getElementById('e-uf').value;
+  const cidade = document.getElementById('e-cidade').value;
+  if(!nome){ showToast('⚠️ Informe o nome'); return; }
+  if(!cat){  showToast('⚠️ Selecione a categoria'); return; }
+
+  const list = loadProviders();
+  const idx  = list.findIndex(function(x){ return x.id===id; });
+  if(idx<0){ showToast('❌ Prestador não encontrado'); return; }
+
+  const num    = document.getElementById('e-num').value.trim();
+  const comp   = document.getElementById('e-comp').value.trim();
+  const bairro = document.getElementById('e-bairro').value.trim();
+  const cep    = document.getElementById('e-cep').value.trim();
+  const enderecoCompleto = [rua,num&&('nº '+num),comp,bairro,cidade+'/'+uf,cep&&('CEP '+cep)].filter(Boolean).join(', ');
+
+  // Merge — preserve lat/lng unless address changed
+  const addrChanged = (rua!==list[idx].rua||cidade!==list[idx].cidade||uf!==list[idx].uf);
+  list[idx] = Object.assign({}, list[idx], {
+    nome, categoria:cat,
+    especialidade: document.getElementById('e-espec').value.trim(),
+    telefone:      document.getElementById('e-tel').value.trim(),
+    whatsapp:      document.getElementById('e-wpp').value.trim(),
+    disponibilidade: document.getElementById('e-disp').value,
+    valor:         document.getElementById('e-valor').value.trim(),
+    rua, num, comp, bairro, cidade, uf, cep,
+    endereco: enderecoCompleto,
+    lat: addrChanged ? null : list[idx].lat,
+    lng: addrChanged ? null : list[idx].lng
+  });
+  saveProviders(list);
+  if(addrChanged && geocoder) geocodeProvider(list[idx]);
+  closeModal('modal-editar');
+  renderHomeProviders();
+  renderGerenciar();
+  showToast('✅ Prestador atualizado!');
+}
+
+// ════════════════════════════════════════
+// PERFIL DO USUÁRIO
+// ════════════════════════════════════════
+function loadPerfil(){ try{ return JSON.parse(localStorage.getItem('sf_perfil')||'{}'); }catch{ return {}; } }
+function savePerfil(p){ localStorage.setItem('sf_perfil',JSON.stringify(p)); }
+
+function getIniciais(nome){
+  if(!nome||!nome.trim()) return '?';
+  const parts = nome.trim().split(/\s+/);
+  if(parts.length===1) return parts[0].slice(0,2).toUpperCase();
+  return (parts[0][0] + parts[parts.length-1][0]).toUpperCase();
+}
+
+function applyPerfil(){
+  try{
+    const p = loadPerfil();
+    const ini = getIniciais(p.nome||'');
+    const av = document.getElementById('user-avatar');
+    if(av) av.textContent = ini;
+  }catch(e){ console.warn('applyPerfil', e); }
+}
+
+function previewIniciais(){
+  const nome = document.getElementById('perfil-nome').value;
+  const ini = getIniciais(nome);
+  document.getElementById('perfil-avatar-big').textContent = ini;
+}
+
+function salvarPerfil(){
+  const nome = document.getElementById('perfil-nome').value.trim();
+  const tel  = document.getElementById('perfil-tel').value.trim();
+  savePerfil({nome, tel});
+  applyPerfil();
+  closeModal("modal-perfil");
+  showToast('✅ Perfil salvo!');
+}
+
+function abrirModalPerfil(){
+  const p = loadPerfil();
+  document.getElementById('perfil-nome').value = p.nome||'';
+  document.getElementById('perfil-tel').value  = p.tel||'';
+  previewIniciais();
+  const locEl = document.getElementById('location-label');
+  document.getElementById('perfil-loc').textContent = locEl ? locEl.textContent : '—';
+  openModal("modal-perfil");
+}
+
+
+// ════════════════════════════════════════
+// EMOJI PICKER
+// ════════════════════════════════════════
+const EMOJI_LIST = [
+  // Saúde
+  '👨‍⚕️','👩‍⚕️','🦷','🏥','💊','🩺','🧬','🩻','🩹','❤️‍🩹',
+  // Construção / Casa
+  '🔧','🪛','🔨','🪚','⚙️','🧱','🏠','🏗️','🪟','🚿','🛁','💡','🔌','🪣',
+  // Serviços
+  '⚖️','📋','📞','💼','🖨️','💻','📦','🚚','🧹','🧴','🪠',
+  // Arte / Beleza
+  '🎨','✂️','💇','💅','🪒','🖌️','📸','🎭','🎬',
+  // Alimentação
+  '🍕','🥗','🍳','🧁','☕','🥩','🍱',
+  // Veículos
+  '🚗','🚙','🏍️','🚛','🚜','✈️','🚢',
+  // Animais / Natureza
+  '🐾','🐕','🐈','🌱','🌿','🌻','🌳',
+  // Educação
+  '📚','✏️','🎓','📐','🔬','🧮',
+  // Tecnologia
+  '📱','🖥️','🔋','📡','🛰️',
+  // Outros
+  '⭐','💰','🤝','👷','🧑‍🔧','👨‍🍳','👨‍🏫','🧑‍💼','🎯','🏆','🔑','🪙','💎','🎁','🔩','❓'
+];
+
+function renderEmojiPicker(){
+  const grid = document.getElementById('emoji-picker-grid');
+  if(!grid) return;
+  const current = document.getElementById('nc-emoji').value || '🔩';
+  grid.innerHTML = EMOJI_LIST.map(e => `
+    <div onclick="selectEmoji('${e}')" style="
+      width:100%;aspect-ratio:1;border-radius:8px;
+      display:flex;align-items:center;justify-content:center;
+      font-size:22px;cursor:pointer;
+      background:${e===current?'var(--blue-light)':'transparent'};
+      border:${e===current?'1.5px solid var(--blue)':'1.5px solid transparent'};
+      transition:all .12s"
+      data-emoji="${e}">${e}</div>`).join('');
+}
+
+function selectEmoji(emoji){
+  document.getElementById('nc-emoji').value = emoji;
+  document.getElementById('nc-emoji-preview').textContent = emoji;
+  // Update grid highlight
+  document.querySelectorAll('#emoji-picker-grid div[data-emoji]').forEach(el => {
+    const active = el.dataset.emoji === emoji;
+    el.style.background = active ? 'var(--blue-light)' : 'transparent';
+    el.style.border = active ? '1.5px solid var(--blue)' : '1.5px solid transparent';
+  });
+}
+
+// ════════════════════════════════════════
+// CATEGORIAS — GERENCIAMENTO
+// ════════════════════════════════════════
+let selectedCatColor = '#f5f5f5';
+
+function openCatsModal(){
+  renderCatsList();
+  populateFCat();
+  openModal("modal-cats");
+}
+
+function populateFCat(){
+  const cats = getCategorias();
+  const sel = document.getElementById('f-cat');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">Selecione...</option>' +
+    cats.map(c => `<option value="${c.nome}">${c.emoji} ${c.nome}</option>`).join('');
+  sel.value = cur;
+}
+
+function renderCatsList(){
+  const cats = getCategorias();
+  const el = document.getElementById('cats-list');
+  if(!cats.length){
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">🏷️</div><p>Nenhuma categoria ainda.</p></div>';
+    return;
+  }
+  el.innerHTML = cats.map(function(c,i){
+    return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:.5px solid var(--border)">'
+      +'<div style="width:40px;height:40px;border-radius:10px;background:'+c.bg+';display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">'+c.emoji+'</div>'
+      +'<div style="flex:1;min-width:0" id="cat-view-'+i+'">'
+        +'<div style="font-size:14px;font-weight:500">'+c.nome+'</div>'
+        +'<div style="font-size:11px;color:var(--text-muted)">Cor <span style="display:inline-block;width:12px;height:12px;background:'+c.bg+';border-radius:2px;vertical-align:middle;border:.5px solid #ddd"></span></div>'
+      +'</div>'
+      +'<div id="cat-edit-'+i+'" style="display:none;flex:1">'
+        +'<input id="cat-input-'+i+'" type="text" value="'+c.nome+'" style="border:1px solid var(--blue);border-radius:8px;padding:6px 8px;font-size:13px;width:100%;outline:none">'
+      +'</div>'
+      +'<button onclick="abrirEditarCat('+i+')" id="cat-btn-edit-'+i+'" style="background:none;border:none;cursor:pointer;font-size:16px;color:#aaa;padding:4px" title="Editar">✏️</button>'
+      +'<button onclick="salvarEditarCat('+i+')" id="cat-btn-save-'+i+'" style="display:none;background:var(--blue);border:none;cursor:pointer;font-size:12px;color:#fff;padding:4px 8px;border-radius:6px">OK</button>'
+      +'<button onclick="deletarCategoria('+i+')" style="background:none;border:none;cursor:pointer;font-size:18px;color:#ccc;padding:4px" title="Remover">🗑</button>'
+    +'</div>';
+  }).join('');
+}
+
+function abrirEditarCat(i){
+  document.getElementById('cat-view-'+i).style.display='none';
+  document.getElementById('cat-edit-'+i).style.display='block';
+  document.getElementById('cat-btn-edit-'+i).style.display='none';
+  document.getElementById('cat-btn-save-'+i).style.display='inline-block';
+  document.getElementById('cat-input-'+i).focus();
+  document.getElementById('cat-input-'+i).select();
+}
+
+function salvarEditarCat(i){
+  const novoNome = document.getElementById('cat-input-'+i).value.trim();
+  if(!novoNome){ showToast('⚠️ Informe um nome'); return; }
+  const cats = getCategorias();
+  const nomeAntigo = cats[i].nome;
+  // Check duplicate
+  if(cats.find(function(c,j){ return j!==i && c.nome.toLowerCase()===novoNome.toLowerCase(); })){
+    showToast('⚠️ Nome já existe'); return;
+  }
+  // Update category name
+  cats[i].nome = novoNome;
+  window._categories = cats;
+  localStorage.setItem('sf_cats', JSON.stringify(cats));
+  if(window.fbRenameCategory) window.fbRenameCategory(nomeAntigo, novoNome, cats[i]);
+  // Update providers that had this category
+  const providers = loadProviders();
+  let changed = 0;
+  providers.forEach(function(p){
+    if(p.categoria===nomeAntigo){
+      p.categoria=novoNome; changed++;
+      if(window.fbSaveProvider) window.fbSaveProvider(p);
+    }
+  });
+  if(changed){ window._providers=providers; localStorage.setItem('sf_providers',JSON.stringify(providers)); }
+  renderCatsList();
+  populateFCat();
+  renderBuscar();
+  showToast('✅ Categoria renomeada'+(changed?' ('+changed+' prestadores atualizados)':''));
+}
+
+function abrirNovaCat(){
+  document.getElementById('nova-cat-form').style.display='block';
+  document.getElementById('nc-nome').focus();
+  renderEmojiPicker();
+}
+function fecharNovaCat(){
+  document.getElementById('nova-cat-form').style.display='none';
+  document.getElementById('nc-nome').value='';
+  document.getElementById('nc-emoji').value='🔩';
+  document.getElementById('nc-emoji-preview').textContent='🔩';
+  selectedCatColor='#f5f5f5';
+  document.querySelectorAll('.color-opt').forEach(el=>el.classList.remove('selected'));
+}
+
+function selectColor(color, el){
+  selectedCatColor = color;
+  document.querySelectorAll('.color-opt').forEach(e=>e.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function salvarNovaCat(){
+  const nome = document.getElementById('nc-nome').value.trim();
+  const emoji = document.getElementById('nc-emoji').value.trim() || '🔩';
+  if(!nome){ showToast('⚠️ Informe o nome da categoria'); return; }
+  const cats = getCategorias();
+  if(cats.find(c=>c.nome.toLowerCase()===nome.toLowerCase())){ showToast('⚠️ Categoria já existe'); return; }
+  cats.push({nome, emoji, bg: selectedCatColor||'#f5f5f5'});
+  saveCats(cats);
+  fecharNovaCat();
+  renderCatsList();
+  populateFCat();
+  renderBuscar();
+  showToast('✅ Categoria "'+nome+'" criada!');
+}
+
+function deletarCategoria(idx){
+  const cats = getCategorias();
+  const cat = cats[idx];
+  const providers = loadProviders().filter(p=>p.categoria===cat.nome);
+  if(providers.length){
+    showToast('⚠️ Há '+providers.length+' prestador(es) nessa categoria');
+    return;
+  }
+  if(!confirm('Remover a categoria "'+cat.nome+'"?')) return;
+  var nomeRemovido = cats[idx].nome;
+  cats.splice(idx,1);
+  window._categories = cats;
+  localStorage.setItem('sf_cats', JSON.stringify(cats));
+  if(window.fbDeleteCategory) window.fbDeleteCategory(nomeRemovido);
+  renderCatsList();
+  populateFCat();
+  renderBuscar();
+  showToast('🗑 Categoria removida');
+}
+
+
+// ════════════════════════════════════════
+// SINCRONIZAÇÃO MANUAL COM FIREBASE
+// ════════════════════════════════════════
+function forceSyncToFirebase(){
+  if(!window.fbSaveProvider || !window.fbSaveCategory){
+    showToast('⚠️ Firebase ainda conectando... Aguarde.');
+    return;
+  }
+  var providers = loadProviders();
+  var cats      = loadCats();
+
+  if(!providers.length && !cats.length){
+    showToast('⚠️ Nenhum dado local para sincronizar.');
+    return;
+  }
+
+  showToast('☁️ Sincronizando ' + providers.length + ' prestadores...');
+
+  var promises = [];
+
+  providers.forEach(function(p){
+    promises.push(window.fbSaveProvider(p));
+  });
+
+  // Só sobe categorias não-padrão (extras criadas pelo usuário)
+  var catNomesPadrao = window.CAT_DEFAULTS.map(function(c){ return c.nome; });
+  cats.forEach(function(c){
+    promises.push(window.fbSaveCategory(c));
+  });
+
+  Promise.all(promises).then(function(){
+    showToast('✅ ' + providers.length + ' prestadores sincronizados!', 3500);
+    var sb = document.getElementById('sync-badge');
+    if(sb){ sb.textContent = '☁️ Sincronizado'; }
+  }).catch(function(e){
+    showToast('❌ Erro ao sincronizar: ' + e.message);
+    console.error('[Firebase sync]', e);
+  });
+}
+
+// ════════════════════════════════════════
+// GEOLOCATION
+// ════════════════════════════════════════
+function startGeolocation(){
+  document.getElementById('loading-msg').textContent='Obtendo localização...';
+  if(!navigator.geolocation){useFallback();return;}
+  navigator.geolocation.getCurrentPosition(
+    pos=>{ userLat=pos.coords.latitude; userLng=pos.coords.longitude; reverseGeocode(userLat,userLng); if(map) updateUserMarker(); },
+    ()=>useFallback(),
+    {enableHighAccuracy:true,timeout:10000,maximumAge:60000}
+  );
+  navigator.geolocation.watchPosition(
+    pos=>{ userLat=pos.coords.latitude; userLng=pos.coords.longitude; if(map) updateUserMarker(); },
+    ()=>{},{enableHighAccuracy:true}
+  );
+}
+
+function useFallback(){
+  userLat=-22.2450; userLng=-43.7020;
+  document.getElementById('location-label').textContent='📍 Localização aproximada';
+}
+
+async function reverseGeocode(lat,lng){
+  try{
+    const r=await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GMAPS_KEY}&language=pt-BR`);
+    const d=await r.json();
+    if(d.results&&d.results[0]){
+      const c=d.results[0].address_components;
+      const bairro=c.find(x=>x.types.includes('sublocality')||x.types.includes('neighborhood'));
+      const cidade=c.find(x=>x.types.includes('administrative_area_level_2'));
+      const loc=[bairro?.short_name,cidade?.short_name].filter(Boolean).join(', ');
+      document.getElementById('location-label').textContent='📍 '+(loc||d.results[0].formatted_address);
+    }
+  }catch{ document.getElementById('location-label').textContent='📍 Localizado'; }
+}
+
+// ════════════════════════════════════════
+// PWA INSTALL
+// ════════════════════════════════════════
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault(); deferredInstall=e;
+  document.getElementById('install-banner').classList.add('show');
+});
+document.getElementById('install-btn').onclick=async()=>{
+  if(!deferredInstall) return;
+  deferredInstall.prompt();
+  const r=await deferredInstall.userChoice;
+  if(r.outcome==='accepted') showToast('✅ App instalado!');
+  deferredInstall=null;
+  document.getElementById('install-banner').classList.remove('show');
+};
+
+// ════════════════════════════════════════
+// STARTUP
+// ════════════════════════════════════════
+// ════════════════════════════════════════
+// BOTÃO VOLTAR ANDROID
+// ════════════════════════════════════════
+// Push dummy state so popstate fires on back press
+history.pushState({sf:true}, '');
+
+window.addEventListener('popstate', function(e){
+  // If any modal is open, close it
+  const modals = ['modal-provider','modal-cadastro','modal-editar','modal-cats','modal-perfil'];
+  for(var i=0;i<modals.length;i++){
+    if(document.getElementById(modals[i]).classList.contains('show')){
+      closeModal(modals[i]);
+      history.pushState({sf:true},'');
+      return;
+    }
+  }
+  // If in results panel inside buscar, go back to cats
+  const results = document.getElementById('results-list');
+  if(results && results.style.display==='block'){
+    voltarCats();
+    history.pushState({sf:true},'');
+    return;
+  }
+  // If in buscar/gerenciar view, go home
+  const active = document.querySelector('.view.active');
+  if(active && active.id!=='view-home'){
+    switchView('home');
+    history.pushState({sf:true},'');
+    return;
+  }
+  // If already home, push state again so next back exits app naturally
+  // (let the default happen — app closes)
+});
+
+window.addEventListener('load',()=>{
+  // Migration: ensure all providers get re-geocoded if lat is null
+  // (fixes providers saved before enderecoGeo fix)
+  try {
+    var ps = loadProviders();
+    var changed = false;
+    ps.forEach(function(p){
+      // If endereco has "nº" pattern (old format), clear lat to force re-geocode
+      if(p.endereco && p.endereco.includes('nº') && !p.lat){ changed = true; }
+    });
+  } catch(e){}
+  function hideOverlay(){
+    const ol = document.getElementById('loading-overlay');
+    if(!ol) return;
+    ol.style.opacity = '0';
+    ol.style.pointerEvents = 'none';
+    setTimeout(()=>{ if(ol && ol.parentNode) ol.parentNode.removeChild(ol); }, 600);
+  }
+
+  try{ applyPerfil(); }catch(e){ console.warn(e); }
+  try{ populateFCat(); }catch(e){ console.warn(e); }
+  try{ renderHomeProviders(); }catch(e){ console.warn(e); }
+  try{ updateBadge(); }catch(e){ console.warn(e); }
+  try{ startGeolocation(); }catch(e){ console.warn(e); }
+  setTimeout(()=>{ try{ loadGoogleMaps(); }catch(e){ console.warn(e); } }, 600);
+
+  // Migrar dados locais para Firebase quando estiver pronto
+  function migrarParaFirebase(){
+    forceSyncToFirebase();
+  }
+  // Tenta migrar quando Firebase conectar
+  if(window._firebaseReady){
+    setTimeout(migrarParaFirebase, 2500);
+  } else {
+    window._onFirebaseReady = function(){
+      setTimeout(migrarParaFirebase, 1500);
+    };
+  }
+
+  // Hide at 1.4s, hard kill at 3s
+  setTimeout(hideOverlay, 1400);
+  setTimeout(()=>{
+    const ol = document.getElementById('loading-overlay');
+    if(ol && ol.parentNode) ol.parentNode.removeChild(ol);
+  }, 3000);
+});
+</script>
+
+<!-- ══ MODAL: GERENCIAR CATEGORIAS ══ -->
+<div class="modal-overlay" id="modal-cats" onclick="closeModalBg(event,'modal-cats')">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div class="modal-title" style="margin-bottom:0;text-align:left">🏷️ Categorias</div>
+      <button class="btn btn-primary" onclick="abrirNovaCat()" style="flex:none;padding:7px 14px;font-size:13px">+ Nova</button>
+    </div>
+
+    <!-- FORM NOVA CATEGORIA (oculto por padrão) -->
+    <div id="nova-cat-form" style="display:none;background:#f8f8f8;border-radius:12px;padding:14px;margin-bottom:14px;border:.5px solid var(--border)">
+      <div style="font-size:13px;font-weight:600;color:var(--blue);margin-bottom:10px">Nova categoria</div>
+      <div class="form-group">
+        <label class="form-label">Nome da categoria <span class="req">*</span></label>
+        <input class="form-input" id="nc-nome" type="text" placeholder="Ex: Jardineiro, Fotógrafo...">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Ícone da categoria</label>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <div id="nc-emoji-preview" style="width:48px;height:48px;border-radius:12px;background:var(--gray);display:flex;align-items:center;justify-content:center;font-size:26px;border:.5px solid var(--border)">🔩</div>
+          <div style="font-size:12px;color:var(--text-muted);line-height:1.5">Toque em um ícone abaixo<br>para selecionar</div>
+        </div>
+        <input type="hidden" id="nc-emoji" value="🔩">
+        <div id="emoji-picker-grid" style="display:grid;grid-template-columns:repeat(8,1fr);gap:6px;max-height:200px;overflow-y:auto;padding:4px 0"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Cor de fundo</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap" id="color-picker">
+          <div class="color-opt" data-color="#fce4ec" style="background:#fce4ec" onclick="selectColor('#fce4ec',this)">🌸</div>
+          <div class="color-opt" data-color="#e8f5e9" style="background:#e8f5e9" onclick="selectColor('#e8f5e9',this)">🌿</div>
+          <div class="color-opt" data-color="#e3f2fd" style="background:#e3f2fd" onclick="selectColor('#e3f2fd',this)">💙</div>
+          <div class="color-opt" data-color="#f3e5f5" style="background:#f3e5f5" onclick="selectColor('#f3e5f5',this)">💜</div>
+          <div class="color-opt" data-color="#fff8e1" style="background:#fff8e1" onclick="selectColor('#fff8e1',this)">⭐</div>
+          <div class="color-opt" data-color="#efebe9" style="background:#efebe9" onclick="selectColor('#efebe9',this)">🪨</div>
+          <div class="color-opt" data-color="#e0f2f1" style="background:#e0f2f1" onclick="selectColor('#e0f2f1',this)">🌊</div>
+          <div class="color-opt" data-color="#fff3e0" style="background:#fff3e0" onclick="selectColor('#fff3e0',this)">🍊</div>
+          <div class="color-opt" data-color="#f5f5f5" style="background:#f5f5f5" onclick="selectColor('#f5f5f5',this)">⬜</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn btn-outline" onclick="fecharNovaCat()" style="flex:1">Cancelar</button>
+        <button class="btn btn-primary" onclick="salvarNovaCat()" style="flex:2">💾 Salvar categoria</button>
+      </div>
+    </div>
+
+    <!-- LISTA DE CATEGORIAS -->
+    <div id="cats-list"></div>
+  </div>
+</div>
+
+
+<!-- ══ MODAL: PERFIL DO USUÁRIO ══ -->
+<div class="modal-overlay" id="modal-perfil" onclick="closeModalBg(event,'modal-perfil')">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">👤 Meu perfil</div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px;margin-bottom:18px">
+      <div id="perfil-avatar-big" style="width:72px;height:72px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#fff;letter-spacing:-1px">?</div>
+      <div style="font-size:12px;color:var(--text-muted)">Suas iniciais aparecem aqui</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Seu nome completo</label>
+      <input class="form-input" id="perfil-nome" type="text" placeholder="Ex: João da Silva" oninput="previewIniciais()">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Telefone</label>
+      <input class="form-input" id="perfil-tel" type="tel" placeholder="(24) 9 9999-9999">
+    </div>
+    <div style="height:.5px;background:var(--border);margin:4px 0 12px"></div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">📍 Localização atual: <span id="perfil-loc">—</span></div>
+    <div class="actions-row">
+      <button class="btn btn-outline" onclick="closeModal("modal-perfil")" style="flex:1">Fechar</button>
+      <button class="btn btn-primary" onclick="salvarPerfil()" style="flex:2">💾 Salvar</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══ MODAL: EDITAR PRESTADOR ══ -->
+<div class="modal-overlay" id="modal-editar" onclick="closeModalBg(event,'modal-editar')">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">✏️ Editar Prestador</div>
+    <input type="hidden" id="e-id">
+
+    <div style="font-size:12px;font-weight:600;color:var(--blue);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;padding-bottom:6px;border-bottom:.5px solid var(--border)">Dados</div>
+    <div class="form-group">
+      <label class="form-label">Nome <span class="req">*</span></label>
+      <input class="form-input" id="e-nome" type="text">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Categoria <span class="req">*</span></label>
+        <select class="form-select" id="e-cat"></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Especialidade</label>
+        <input class="form-input" id="e-espec" type="text">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Telefone</label>
+        <input class="form-input" id="e-tel" type="tel" maxlength="15" oninput="maskPhone(this)" placeholder="(99) 99999-9999">
+      </div>
+      <div class="form-group">
+        <label class="form-label">WhatsApp</label>
+        <input class="form-input" id="e-wpp" type="tel" maxlength="15" oninput="maskPhone(this)" placeholder="5524999999999">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Disponibilidade</label>
+        <select class="form-select" id="e-disp">
+          <option>Disponível agora</option>
+          <option>Somente agendamento</option>
+          <option>Ocupado</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Valor</label>
+        <input class="form-input" id="e-valor" type="text" placeholder="R$ 150,00">
+      </div>
+    </div>
+
+    <div style="font-size:12px;font-weight:600;color:var(--blue);text-transform:uppercase;letter-spacing:.5px;margin:4px 0 10px;padding-bottom:6px;border-bottom:.5px solid var(--border)">Endereço</div>
+    <div class="form-group">
+      <label class="form-label">CEP</label>
+      <input class="form-input" id="e-cep" type="tel" maxlength="9" placeholder="00000-000"
+        oninput="maskCep(this);if(this.value.replace(/\D/g,'').length===8)buscaCep('e');"
+        onblur="buscaCep('e')">
+      <div class="form-hint" id="e-cep-hint">Digite o CEP para preencher automaticamente</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Rua <span class="req">*</span></label>
+      <input class="form-input" id="e-rua" type="text">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Número</label>
+        <input class="form-input" id="e-num" type="tel">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Complemento</label>
+        <input class="form-input" id="e-comp" type="text">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Bairro</label>
+      <input class="form-input" id="e-bairro" type="text">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Estado</label>
+        <select class="form-select" id="e-uf" onchange="carregarCidades('e')">
+          <option value="">UF...</option>
+          <option value="AC">AC – Acre</option><option value="AL">AL – Alagoas</option>
+          <option value="AP">AP – Amapá</option><option value="AM">AM – Amazonas</option>
+          <option value="BA">BA – Bahia</option><option value="CE">CE – Ceará</option>
+          <option value="DF">DF – Distrito Federal</option><option value="ES">ES – Espírito Santo</option>
+          <option value="GO">GO – Goiás</option><option value="MA">MA – Maranhão</option>
+          <option value="MT">MT – Mato Grosso</option><option value="MS">MS – Mato Grosso do Sul</option>
+          <option value="MG">MG – Minas Gerais</option><option value="PA">PA – Pará</option>
+          <option value="PB">PB – Paraíba</option><option value="PR">PR – Paraná</option>
+          <option value="PE">PE – Pernambuco</option><option value="PI">PI – Piauí</option>
+          <option value="RJ">RJ – Rio de Janeiro</option><option value="RN">RN – Rio Grande do Norte</option>
+          <option value="RS">RS – Rio Grande do Sul</option><option value="RO">RO – Rondônia</option>
+          <option value="RR">RR – Roraima</option><option value="SC">SC – Santa Catarina</option>
+          <option value="SP">SP – São Paulo</option><option value="SE">SE – Sergipe</option>
+          <option value="TO">TO – Tocantins</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Cidade</label>
+        <select class="form-select" id="e-cidade" disabled>
+          <option value="">Selecione o estado</option>
+        </select>
+        <div class="form-hint" id="e-cidade-hint" style="display:none"></div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn btn-outline" onclick="closeModal('modal-editar')" style="flex:1">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarEdicao()" style="flex:2">💾 Salvar alterações</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
