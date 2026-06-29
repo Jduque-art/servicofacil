@@ -1305,6 +1305,7 @@ function renderGerenciar(){
     var rRound = Math.round(p.rating||0);
     var stars  = '★'.repeat(rRound)+'☆'.repeat(5-rRound);
     var rInfo  = p.rating ? (Number(p.rating).toFixed(1)+' ★'+(p.totalAvaliacoes?' ('+p.totalAvaliacoes+' aval.)':'')) : 'Sem avaliação';
+    var isFav  = p.favorito === true;
     // All comments (não truncado)
     var comentDiv = p.comentario
       ? '<div style="background:#f8f9ff;border-radius:8px;padding:8px 10px;margin-top:6px"><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">💬 COMENTÁRIO</div><div style="font-size:12px;color:var(--text);line-height:1.5">'+p.comentario+'</div></div>'
@@ -1322,10 +1323,14 @@ function renderGerenciar(){
         +'</div>'
         +'<span class="badge '+badge+'" style="align-self:flex-start">'+p.disponibilidade+'</span>'
       +'</div>'
-      +'<div class="actions-row" style="margin-top:10px">'
+      +'<div class="actions-row" style="margin-top:10px;align-items:center">'
         +'<button class="btn btn-outline" onclick="showProviderDetail('+p.id+')" style="flex:1">Ver</button>'
         +'<button class="btn btn-primary" onclick="selectProvider('+p.id+')" style="flex:1">📍 Mapa</button>'
         +'<button class="btn btn-red btn-icon" onclick="deletarPrestador('+p.id+')">🗑</button>'
+        +'<div style="display:flex;flex-direction:column;align-items:center;gap:2px;margin-left:4px">'
+          +'<span style="font-size:9px;color:var(--text-muted);text-align:center;line-height:1.2;white-space:nowrap">Marcar<br>favorito</span>'
+          +'<button onclick="toggleFavorito('+p.id+');renderGerenciar()" style="background:none;border:none;cursor:pointer;font-size:22px;color:'+(isFav?'#e8a000':'#ccc')+';padding:0;line-height:1">'+(isFav?'⭐':'☆')+'</button>'
+        +'</div>'
       +'</div>'
     +'</div>';
   }).join('');
