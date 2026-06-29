@@ -1005,7 +1005,7 @@ function renderHomeProviders(){
     el.innerHTML=`<div class="empty-state"><div class="empty-icon">📋</div><p>Nenhum prestador cadastrado.<br>Vá em <strong>Buscar</strong> para adicionar.</p></div>`;
     return;
   }
-  el.innerHTML=list.slice(0,6).map(p=>providerRow(p)).join('');
+  el.innerHTML=sortProviders(list).slice(0,6).map(function(p){ return providerRow(p); }).join('');
   if(userLat&&distMatrixService) setTimeout(()=>calcDistancesForList(list),800);
 }
 
@@ -1187,7 +1187,7 @@ function filtrarFavoritos(){
   if(!list.length){
     el.innerHTML='<div class="empty-state"><div class="empty-icon">⭐</div><p>Nenhum favorito ainda.<br>Toque na ☆ ao lado de um prestador.</p></div>';
   } else {
-    el.innerHTML=list.map(function(p){return favoritoRow(p);}).join('');
+    el.innerHTML=sortProviders(list).map(function(p){return favoritoRow(p);}).join('');
     if(userLat&&distMatrixService) setTimeout(function(){calcDistancesForFavs(list);},500);
   }
 }
@@ -1222,7 +1222,7 @@ function showResults(list, label){
       + '<span onclick="openModal(&quot;modal-cadastro&quot;)" style="color:var(--blue);cursor:pointer;font-weight:600">+ Cadastrar prestador</span></p></div>';
     return;
   }
-  el.innerHTML = list.map(function(p){ return providerRow(p); }).join('');
+  el.innerHTML = sortProviders(list).map(function(p){ return providerRow(p); }).join('');
   // Restore focus to search input after DOM update
   var inp = document.getElementById('search-input');
   if(inp && document.activeElement !== inp){
@@ -1421,13 +1421,13 @@ function showProviderDetail(id){
       <span class="badge ${badge}">${p.disponibilidade}</span>
     </div>
     <div class="divider"></div>
-    <div class="meta-row"><span class="meta-label">🏠 Rua</span><span class="meta-value" style="font-size:12px">${p.rua}${p.num?', nº '+p.num:''}</span></div>
-    ${p.comp?`<div class="meta-row"><span class="meta-label">🏢 Compl.</span><span class="meta-value" style="font-size:12px">${p.comp}</span></div>`:''}
-    <div class="meta-row"><span class="meta-label">🏘 Bairro</span><span class="meta-value" style="font-size:12px">${p.bairro||'—'}</span></div>
-    <div class="meta-row"><span class="meta-label">🏙 Cidade</span><span class="meta-value" style="font-size:12px">${p.cidade||'—'}/${p.uf||'—'}</span></div>
-    ${p.cep?`<div class="meta-row"><span class="meta-label">📮 CEP</span><span class="meta-value" style="font-size:12px">${p.cep}</span></div>`:''}
-    ${p.telefone?`<div class="meta-row"><span class="meta-label">📞 Telefone</span><span class="meta-value">${formatPhone(p.telefone)}</span></div>`:''}
-    ${p.valor?`<div class="meta-row"><span class="meta-label">💰 Valor</span><span class="meta-value green">${p.valor}</span></div>`:''}
+    <div class="meta-row"><span class="meta-label">🏠 Rua: </span><span class="meta-value" style="font-size:12px">${p.rua}${p.num?', nº '+p.num:''}</span></div>
+    ${p.comp?`<div class="meta-row"><span class="meta-label">🏢 Compl.: </span><span class="meta-value" style="font-size:12px">${p.comp}</span></div>`:''}
+    <div class="meta-row"><span class="meta-label">🏘 Bairro: </span><span class="meta-value" style="font-size:12px">${p.bairro||'—'}</span></div>
+    <div class="meta-row"><span class="meta-label">🏙 Cidade: </span><span class="meta-value" style="font-size:12px">${p.cidade||'—'}/${p.uf||'—'}</span></div>
+    ${p.cep?`<div class="meta-row"><span class="meta-label">📮 CEP: </span><span class="meta-value" style="font-size:12px">${p.cep}</span></div>`:''}
+    ${p.telefone?`<div class="meta-row"><span class="meta-label">📞 Telefone: </span><span class="meta-value">${formatPhone(p.telefone)}</span></div>`:''}
+    ${p.valor?`<div class="meta-row"><span class="meta-label">💰 Valor: </span><span class="meta-value green">${p.valor}</span></div>`:''}
     ${p.comentario?`<div style="background:#f8f9ff;border-radius:10px;padding:10px 12px;margin:8px 0"><div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:4px">💬 COMENTÁRIO</div><div style="font-size:13px;color:var(--text);line-height:1.5">${p.comentario}</div></div>`:''}
     <div class="meta-row"><span class="meta-label">📏 Distância</span><span class="meta-value blue" id="detail-dist">Calculando...</span></div>
     <div class="meta-row"><span class="meta-label">⏱ Tempo</span><span class="meta-value green" id="detail-time">—</span></div>
@@ -2119,6 +2119,27 @@ function forceSyncToFirebase(){
   });
 }
 
+
+
+// ════════════════════════════════════════
+// ORDENAÇÃO DE PRESTADORES
+// Ordem: 1) Disponível agora  2) Distância  3) Nome A-Z
+// ════════════════════════════════════════
+function sortProviders(list){
+  var ORDER = {'Disponível agora':0, 'Somente agendamento':1, 'Ocupado':2};
+  return list.slice().sort(function(a, b){
+    // 1. Disponibilidade
+    var da = ORDER[a.disponibilidade] !== undefined ? ORDER[a.disponibilidade] : 9;
+    var db = ORDER[b.disponibilidade] !== undefined ? ORDER[b.disponibilidade] : 9;
+    if(da !== db) return da - db;
+    // 2. Distância (se calculada — menor primeiro)
+    var distA = parseFloat((document.getElementById('dist-'+a.id)||{}).textContent)||999;
+    var distB = parseFloat((document.getElementById('dist-'+b.id)||{}).textContent)||999;
+    if(distA !== distB) return distA - distB;
+    // 3. Nome A-Z
+    return (a.nome||'').localeCompare(b.nome||'', 'pt-BR');
+  });
+}
 
 // ════════════════════════════════════════
 // AVALIAÇÃO COLETIVA DE PRESTADORES
