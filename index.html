@@ -2,10 +2,16 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ServiçoFácil">
+<meta name="application-name" content="ServiçoFácil">
 <meta name="theme-color" content="#1a56a0">
+<meta name="description" content="Encontre prestadores de serviço próximos com distância e tempo real">
+<link rel="manifest" href='data:application/json,%7B%0A%20%20%22name%22%3A%20%22Servi%C3%A7oF%C3%A1cil%22%2C%0A%20%20%22short_name%22%3A%20%22Servi%C3%A7oF%C3%A1cil%22%2C%0A%20%20%22description%22%3A%20%22Encontre%20prestadores%20de%20servi%C3%A7o%20pr%C3%B3ximos%22%2C%0A%20%20%22start_url%22%3A%20%22./%22%2C%0A%20%20%22scope%22%3A%20%22./%22%2C%0A%20%20%22display%22%3A%20%22standalone%22%2C%0A%20%20%22orientation%22%3A%20%22portrait%22%2C%0A%20%20%22background_color%22%3A%20%22%23ffffff%22%2C%0A%20%20%22theme_color%22%3A%20%22%231a56a0%22%2C%0A%20%20%22icons%22%3A%20%5B%0A%20%20%20%20%7B%0A%20%20%20%20%20%20%22src%22%3A%20%22data%3Aimage/svg%2Bxml%2C%253Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%20512%20512%27%253E%253Crect%20width%3D%27512%27%20height%3D%27512%27%20rx%3D%2780%27%20fill%3D%27%25231a56a0%27/%253E%253Ctext%20x%3D%27256%27%20y%3D%27340%27%20text-anchor%3D%27middle%27%20font-size%3D%27300%27%20fill%3D%27white%27%253E%25F0%259F%2594%25A7%253C/text%253E%253C/svg%253E%22%2C%0A%20%20%20%20%20%20%22sizes%22%3A%20%22192x192%22%2C%0A%20%20%20%20%20%20%22type%22%3A%20%22image/svg%2Bxml%22%2C%0A%20%20%20%20%20%20%22purpose%22%3A%20%22any%20maskable%22%0A%20%20%20%20%7D%2C%0A%20%20%20%20%7B%0A%20%20%20%20%20%20%22src%22%3A%20%22data%3Aimage/svg%2Bxml%2C%253Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%20512%20512%27%253E%253Crect%20width%3D%27512%27%20height%3D%27512%27%20rx%3D%2780%27%20fill%3D%27%25231a56a0%27/%253E%253Ctext%20x%3D%27256%27%20y%3D%27340%27%20text-anchor%3D%27middle%27%20font-size%3D%27300%27%20fill%3D%27white%27%253E%25F0%259F%2594%25A7%253C/text%253E%253C/svg%253E%22%2C%0A%20%20%20%20%20%20%22sizes%22%3A%20%22512x512%22%2C%0A%20%20%20%20%20%20%22type%22%3A%20%22image/svg%2Bxml%22%2C%0A%20%20%20%20%20%20%22purpose%22%3A%20%22any%20maskable%22%0A%20%20%20%20%7D%0A%20%20%5D%0A%7D'>
 <title>ServiçoFácil</title>
 <!-- Firebase SDK (compat — funciona em HTML standalone) -->
 <!-- Firebase SDK via CDN -->
@@ -40,12 +46,28 @@ window.addEventListener('load', function(){
 
   // ── CRUD Prestadores ───────────────────────────────────────────
   window.fbSaveProvider = function(p){
-    return db.collection('providers').doc(String(p.id)).set(
-      Object.assign({}, p, {id: String(p.id)})
-    );
+    // Never save 'favorito' to Firebase — it is personal per device
+    var data = Object.assign({}, p, {id: String(p.id)});
+    delete data.favorito;
+    return db.collection('providers').doc(String(p.id)).set(data);
   };
   window.fbDeleteProvider = function(id){
     return db.collection('providers').doc(String(id)).delete();
+  };
+
+  // ── CRUD Avaliações (subcoleção por prestador) ────────────
+  window.fbSaveReview = function(providerId, review){
+    return db.collection('providers').doc(String(providerId))
+      .collection('reviews').doc(String(review.id)).set(review);
+  };
+  window.fbGetReviews = function(providerId, callback){
+    db.collection('providers').doc(String(providerId))
+      .collection('reviews').orderBy('data','desc')
+      .onSnapshot(function(snap){
+        var reviews = [];
+        snap.forEach(function(d){ reviews.push(d.data()); });
+        callback(reviews);
+      });
   };
 
   // ── CRUD Categorias ────────────────────────────────────────────
@@ -66,35 +88,64 @@ window.addEventListener('load', function(){
     var list = [];
     snap.forEach(function(d){
       var p = d.data();
-      // Garante id numérico para compatibilidade interna
       if(typeof p.id === 'string') p.id = parseInt(p.id)||p.id;
       list.push(p);
     });
+    // Restore local favorites — they are personal and never stored in Firebase
+    var localFavs = {};
+    try{
+      var localList = JSON.parse(localStorage.getItem('sf_favs')||'{}');
+      localFavs = localList;
+    }catch(e){}
+    list.forEach(function(p){
+      p.favorito = localFavs[String(p.id)] === true;
+    });
     window._providers = list;
+    // Save full list to localStorage (includes favorito for this device)
     localStorage.setItem('sf_providers', JSON.stringify(list));
-    try{ renderHomeProviders(); }catch(e){}
-    try{ updateBadge(); }catch(e){}
-    var bv=document.getElementById('view-buscar');
-    if(bv&&bv.classList.contains('active')) try{ renderBuscar(); }catch(e){}
-    var gv=document.getElementById('view-gerenciar');
-    if(gv&&gv.classList.contains('active')) try{ renderGerenciar(); }catch(e){}
-    // Atualiza badge de sync
+
+    // Update badge
     var sb=document.getElementById('sync-badge');
     if(sb) sb.textContent='☁️ '+list.length+(list.length===1?' prestador':' prestadores');
-    console.log('[Firebase] providers atualizado:', list.length);
-    // Force re-render ALL views so no stale data anywhere
+    console.log('[Firebase] providers:', list.length);
+
+    // Auto-create missing categories from providers
     setTimeout(function(){
+      try{
+        var knownCats = (window._categories||[]).map(function(c){return c.nome;});
+        list.forEach(function(p){
+          if(p.categoria && knownCats.indexOf(p.categoria)===-1){
+            // Category exists in provider but not in categories list — add it
+            var newCat = {
+              nome: p.categoria,
+              emoji: '🔩',
+              bg: '#f5f5f5'
+            };
+            window._categories = window._categories||[];
+            window._categories.push(newCat);
+            knownCats.push(p.categoria);
+            if(window.fbSaveCategory) window.fbSaveCategory(newCat);
+            console.log('[Firebase] Auto-criada categoria:', p.categoria);
+          }
+        });
+      }catch(e){}
+    }, 800);
+
+    // Re-render EVERYTHING immediately
+    function reRenderAll(){
       try{ renderHomeProviders(); }catch(e){}
       try{ updateBadge(); }catch(e){}
       try{ renderGerenciar(); }catch(e){}
-      var bv=document.getElementById('view-buscar');
-      if(bv&&bv.classList.contains('active')) try{ renderBuscar(); }catch(e){}
-    }, 100);
+      try{ renderBuscar(); }catch(e){}
+    }
+    reRenderAll();
+    setTimeout(reRenderAll, 500);
+    setTimeout(reRenderAll, 1500);
+
   }, function(err){
     console.error('[Firebase] providers erro:', err);
     var sb=document.getElementById('sync-badge');
     if(sb) sb.textContent='⚠️ Sem conexão';
-    showToast('⚠️ Erro Firebase: '+err.code);
   });
 
   // ── Listener: Categorias em tempo real ────────────────────────
@@ -132,7 +183,43 @@ window.addEventListener('load', function(){
   }
   tryInitFirebase();
 });
-</script>r:var(--text-muted)}
+</script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --blue:#1a56a0;--blue-dark:#133f7a;--blue-light:#e8f0f8;
+  --green:#2a7d3f;--green-light:#e8f5ec;
+  --orange:#b25a00;--orange-light:#fff3e0;
+  --red:#d03030;--gray:#f0f0f0;
+  --text:#111;--text-muted:#666;--border:#e0e0e0;--white:#fff;
+  --radius:14px;--radius-sm:8px;
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bottom:env(safe-area-inset-bottom,0px);
+}
+html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f0f0f0;color:var(--text);overflow:hidden}
+#app{display:flex;flex-direction:column;height:100%;max-width:480px;margin:0 auto;background:#f0f0f0;position:relative;overflow:hidden}
+.status-bar{background:var(--blue-dark);color:#fff;font-size:12px;padding:calc(var(--safe-top)+6px) 16px 6px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.top-bar{background:var(--blue);color:#fff;padding:12px 16px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0}
+.top-bar-info{flex:1}
+.top-bar-title{font-size:18px;font-weight:600;letter-spacing:-0.3px}
+.top-bar-sub{font-size:12px;opacity:0.8;margin-top:1px}
+.avatar{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;border:1.5px solid rgba(255,255,255,0.4)}
+.top-btn{background:rgba(255,255,255,0.18);border:1.5px solid rgba(255,255,255,0.45);color:#fff;border-radius:10px;padding:6px 13px;font-size:13px;font-weight:600;cursor:pointer}
+#map{width:100%;height:240px;flex-shrink:0;background:#e8ede0;position:relative}
+#map-placeholder{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#666}
+.spinner{width:30px;height:30px;border:3px solid #ccc;border-top-color:var(--blue);border-radius:50%;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.info-pill{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:var(--blue);color:#fff;border-radius:20px;padding:6px 16px;font-size:13px;font-weight:500;display:flex;gap:12px;align-items:center;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.25);z-index:5;display:none}
+.live-dot{width:8px;height:8px;background:#7ef58a;border-radius:50%;animation:pulse 1.8s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.map-btn{position:absolute;bottom:10px;right:10px;background:#fff;border:none;border-radius:8px;padding:6px 10px;font-size:12px;color:var(--blue);font-weight:500;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.2);z-index:5;display:none}
+.content-area{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px;display:flex;flex-direction:column;gap:10px;padding-bottom:calc(72px + var(--safe-bottom))}
+.card{background:var(--white);border-radius:var(--radius);padding:14px;border:.5px solid var(--border)}
+.card-header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.card-icon{width:40px;height:40px;border-radius:10px;background:var(--blue-light);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.card-title{font-size:15px;font-weight:600}
+.card-sub{font-size:12px;colo
+r:var(--text-muted)}
 .stars{color:#e8a000;font-size:13px}
 
 .transport-tabs{display:flex;gap:6px;margin-bottom:10px}
@@ -385,7 +472,7 @@ window.addEventListener('load', function(){
       </div>
     </div>
 
-    <!-- AVALIAÇÃO -->
+    <!-- AVALIAÇÃO E COMENTÁRIOS -->
     <div class="form-group">
       <label class="form-label">Avaliação inicial</label>
       <div style="display:flex;gap:8px">
@@ -398,6 +485,12 @@ window.addEventListener('load', function(){
         </div>
         <span id="rating-label" style="font-size:13px;color:var(--text-muted);align-self:center">Toque para avaliar</span>
       </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Comentário / Observação</label>
+      <textarea class="form-input" id="f-comentario" rows="3"
+        placeholder="Ex: Profissional pontual, ótimo atendimento, recomendo!"
+        style="resize:none;font-family:inherit;line-height:1.5"></textarea>
     </div>
 
     <div style="display:flex;gap:8px;margin-top:8px;padding-bottom:4px">
@@ -412,9 +505,11 @@ window.addEventListener('load', function(){
   <div class="status-bar">
     <span id="clock">09:41</span><span>📶 🔋</span>
   </div>
-  <div id="install-banner">
-    <span>📲</span><p>Instale o app na tela inicial!</p>
-    <button id="install-btn">Instalar</button>
+  <div id="install-banner" style="background:#1a56a0;color:#fff;padding:12px 16px;display:none;align-items:center;gap:10px;flex-shrink:0">
+    <span style="font-size:22px">📲</span>
+    <p style="flex:1;font-size:13px;font-weight:500">Instale o ServiçoFácil na tela inicial!</p>
+    <button id="install-btn" style="background:#fff;color:#1a56a0;border:none;border-radius:10px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">Instalar</button>
+    <button onclick="document.getElementById('install-banner').style.display='none'" style="background:none;border:none;color:rgba(255,255,255,0.7);font-size:20px;cursor:pointer;padding:0 4px">✕</button>
   </div>
 
   <!-- ══════ VIEW: INÍCIO ══════ -->
@@ -482,7 +577,7 @@ window.addEventListener('load', function(){
         <div class="top-bar-title">Buscar prestador</div>
       </div>
       <button class="top-btn" onclick="openCatsModal()" style="margin-right:6px">🏷️</button>
-      <button class="top-btn" onclick="openModal(&quot;modal-cadastro&quot;)">+ Novo</button>
+      <button class="top-btn" onclick="openModal('modal-cadastro')">+ Novo</button>
     </div>
 
     <!-- PAINEL ÚNICO — search bar sempre presente, nunca recriada -->
@@ -531,7 +626,7 @@ window.addEventListener('load', function(){
     <div class="top-bar">
       <div class="top-bar-info"><div class="top-bar-title">Prestadores</div><div class="top-bar-sub" id="gerenciar-sub">0 cadastrados</div></div>
       <button class="top-btn" onclick="openCatsModal()" style="margin-right:6px">🏷️ Cats</button>
-      <button class="top-btn" onclick="openModal("modal-cadastro")">+ Novo</button>
+      <button class="top-btn" onclick="openModal('modal-cadastro')">+ Novo</button>
     </div>
     <div class="content-area" id="gerenciar-list"></div>
   </div>
@@ -583,7 +678,32 @@ function loadCats(){
 }
 function saveCats(list){ localStorage.setItem('sf_cats',JSON.stringify(list)); }
 // Alias so existing code still works
-function getCategorias(){ try{ return loadCats(); }catch(e){ return CAT_DEFAULTS; } }
+function getCategorias(){
+  var cats;
+  try{ cats = loadCats(); }catch(e){ cats = []; }
+
+  // Always include ALL default categories
+  var catNames = cats.map(function(c){return c.nome;});
+  CAT_DEFAULTS.forEach(function(def){
+    if(catNames.indexOf(def.nome)===-1){
+      cats.push(def);
+      catNames.push(def.nome);
+    }
+  });
+
+  // Also include any category used by providers but not yet in the list
+  var providers = window._providers||[];
+  providers.forEach(function(p){
+    if(p.categoria && catNames.indexOf(p.categoria)===-1){
+      cats.push({nome:p.categoria, emoji:'🔩', bg:'#f5f5f5'});
+      catNames.push(p.categoria);
+    }
+  });
+
+  // Ordem alfabética
+  cats.sort(function(a,b){ return a.nome.localeCompare(b.nome,'pt-BR'); });
+  return cats;
+}
 
 const DISP_BADGE = {'Disponível agora':'badge-green','Somente agendamento':'badge-blue','Ocupado':'badge-gray'};
 
@@ -602,7 +722,17 @@ function loadProviders(){
   if(window._providers && window._providers.length > 0) return window._providers;
   try{ return JSON.parse(localStorage.getItem('sf_providers')||'[]'); }catch{ return []; }
 }
-function saveProviders(l){ localStorage.setItem('sf_providers',JSON.stringify(l)) }
+function saveProviders(l, skipFirebase){
+  window._providers = l;
+  localStorage.setItem('sf_providers', JSON.stringify(l));
+  if(!skipFirebase && window.fbSaveProvider){
+    l.forEach(function(p){
+      var clean = Object.assign({}, p);
+      delete clean.favorito;
+      window.fbSaveProvider(clean);
+    });
+  }
+}
 
 // ════════════════════════════════════════
 // CLOCK
@@ -626,16 +756,16 @@ function closeModalBg(e,id){ if(e.target===document.getElementById(id)) closeMod
 // NAVIGATION
 // ════════════════════════════════════════
 function switchView(name){
-  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(function(v){v.classList.remove('active');});
+  document.querySelectorAll('.nav-item').forEach(function(n){n.classList.remove('active');});
   document.getElementById('view-'+name).classList.add('active');
   document.getElementById('nav-'+name).classList.add('active');
-  if(name==='buscar'){ renderBuscar(); }
-  if(name==='gerenciar'){
-    // Pull latest from Firebase before rendering
-    renderGerenciar();
+  function doRender(){
+    if(name==='buscar')    try{renderBuscar();}catch(e){}
+    if(name==='gerenciar') try{renderGerenciar();}catch(e){}
+    if(name==='home')      try{renderHomeProviders();}catch(e){}
   }
-  if(name==='home') renderHomeProviders();
+  doRender();
 }
 
 // ════════════════════════════════════════
@@ -655,6 +785,15 @@ function maskPhone(el){
   else
     v=v.replace(/(\d{2})(\d{5})(\d{0,4})/,'($1) $2-$3');
   el.value=v.replace(/-$/,'');
+}
+
+function formatPhone(raw){
+  if(!raw) return '';
+  var v = String(raw).replace(/\D/g,'');
+  if(v.length===0) return raw;
+  if(v.length<=10)
+    return v.replace(/(\d{2})(\d{4})(\d{0,4})/,'($1) $2-$3').replace(/-$/,'');
+  return v.replace(/(\d{2})(\d{5})(\d{0,4})/,'($1) $2-$3').replace(/-$/,'');
 }
 
 async function buscaCep(prefix){
@@ -784,8 +923,13 @@ function salvarPrestador(){
 
   const list=loadProviders();
   list.push(p);
-  saveProviders(list);
-
+  window._providers=list;
+  localStorage.setItem('sf_providers',JSON.stringify(list));
+  // Upload to Firebase without favorito field
+  if(window.fbSaveProvider){
+    var cleanP=Object.assign({},p); delete cleanP.favorito;
+    window.fbSaveProvider(cleanP);
+  }
   if(geocoder) geocodeProvider(p);
 
   closeModal("modal-cadastro");
@@ -796,7 +940,7 @@ function salvarPrestador(){
 }
 
 function clearForm(){
-  ['f-nome','f-espec','f-tel','f-wpp','f-valor','f-cep','f-rua','f-num','f-comp','f-bairro'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  ['f-nome','f-espec','f-tel','f-wpp','f-valor','f-cep','f-rua','f-num','f-comp','f-bairro','f-comentario'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('f-cat').value='';
   document.getElementById('f-disp').value='Disponível agora';
   document.getElementById('f-uf').value='';
@@ -853,7 +997,9 @@ function geocodeProvider(p){
 // RENDER: HOME
 // ════════════════════════════════════════
 function renderHomeProviders(){
-  const list=loadProviders();
+  const list = window._providers && window._providers.length > 0
+    ? window._providers
+    : loadProviders();
   const el=document.getElementById('home-providers');
   if(!list.length){
     el.innerHTML=`<div class="empty-state"><div class="empty-icon">📋</div><p>Nenhum prestador cadastrado.<br>Vá em <strong>Buscar</strong> para adicionar.</p></div>`;
@@ -902,12 +1048,23 @@ function doSearch(qParam){
 }
 
 function toggleFavorito(id){
-  const list=loadProviders();
-  const idx=list.findIndex(function(x){return x.id===id;});
+  // Favorites are LOCAL only — stored in sf_favs, never in Firebase
+  var list = window._providers || loadProviders();
+  var idx  = list.findIndex(function(x){ return x.id===id; });
   if(idx<0) return;
-  list[idx].favorito=!list[idx].favorito;
-  saveProviders(list);
-  // Re-render apenas o botão sem re-fazer tudo
+  list[idx].favorito = !list[idx].favorito;
+  window._providers  = list;
+
+  // Save favorites to a dedicated localStorage key (not sf_providers)
+  var favs = {};
+  try{ favs = JSON.parse(localStorage.getItem('sf_favs')||'{}'); }catch(e){}
+  if(list[idx].favorito) favs[String(id)] = true;
+  else delete favs[String(id)];
+  localStorage.setItem('sf_favs', JSON.stringify(favs));
+
+  // Also update sf_providers locally (for offline display)
+  localStorage.setItem('sf_providers', JSON.stringify(list));
+
   doSearch(document.getElementById('search-input').value||'');
   renderHomeProviders();
   showToast(list[idx].favorito?'⭐ Adicionado aos favoritos':'☆ Removido dos favoritos');
@@ -919,7 +1076,9 @@ function favoritoRow(p){
   const dispDot={'Disponível agora':'🟢','Somente agendamento':'🔵','Ocupado':'⚫'};
   const dot=dispDot[p.disponibilidade]||'⚫';
   const dcolor=dispColor[p.disponibilidade]||'#888';
-  const stars='★'.repeat(p.rating||0)+'☆'.repeat(5-(p.rating||0));
+  var ratingVal = Math.round(p.rating||0);
+  const stars='★'.repeat(ratingVal)+'☆'.repeat(5-ratingVal);
+  var ratingText = p.rating ? (Number(p.rating).toFixed(1)+' ★') : '—';
   return '<div style="background:var(--white);border-radius:var(--radius);border:.5px solid var(--border);padding:14px;margin-bottom:8px">'
     // Header: avatar + nome + status
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
@@ -945,7 +1104,7 @@ function favoritoRow(p){
           +'<span style="font-size:16px">📞</span>'
           +'<div style="flex:1">'
             +'<div style="font-size:11px;color:var(--text-muted)">Telefone</div>'
-            +'<div style="font-size:14px;font-weight:600;color:var(--blue)">'+p.telefone+'</div>'
+            +'<div style="font-size:14px;font-weight:600;color:var(--blue)">'+formatPhone(p.telefone)+'</div>'
           +'</div>'
           +'<a href="tel:'+p.telefone+'" style="background:var(--blue);color:#fff;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:500;text-decoration:none">Ligar</a>'
           +(p.whatsapp?'<a href="https://wa.me/'+p.whatsapp+'" target="_blank" style="background:#25d366;color:#fff;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:500;text-decoration:none">WhatsApp</a>':'')
@@ -1075,7 +1234,9 @@ function showResults(list, label){
 }
 
 function renderCatGrid(){
-  const list = loadProviders();
+  const list = window._providers && window._providers.length > 0
+    ? window._providers
+    : loadProviders();
   const counts = {};
   list.forEach(function(p){ counts[p.categoria]=(counts[p.categoria]||0)+1; });
   const grid = document.getElementById('cat-grid');
@@ -1125,35 +1286,48 @@ function renderBuscar(){
 // RENDER: GERENCIAR
 // ════════════════════════════════════════
 function renderGerenciar(){
-  const list=loadProviders();
-  document.getElementById('gerenciar-sub').textContent=list.length+' prestador'+(list.length!==1?'es':'')+' cadastrado'+(list.length!==1?'s':'');
+  const list = loadProviders();
   const el=document.getElementById('gerenciar-list');
+  document.getElementById('gerenciar-sub').textContent=list.length+' prestador'+(list.length!==1?'es':'')+' cadastrado'+(list.length!==1?'s':'');
   if(!list.length){
-    el.innerHTML=`<div class="empty-state" style="background:var(--white);border-radius:var(--radius);padding:32px 16px;border:.5px solid var(--border)"><div class="empty-icon">👤</div><p>Nenhum prestador cadastrado.<br>Toque em <strong>+ Novo</strong> para começar.</p></div>`;
+    // Show spinner and retry — Firebase may still be syncing
+    el.innerHTML='<div class="empty-state" style="background:var(--white);border-radius:var(--radius);padding:32px 16px;border:.5px solid var(--border)"><div class="spinner" style="margin:0 auto"></div><p style="margin-top:12px">Carregando dados da nuvem...</p></div>';
+    // Auto-retry after 1.5s
+    setTimeout(function(){
+      var retryList = loadProviders();
+      if(retryList.length > 0) renderGerenciar();
+    }, 1500);
     return;
   }
-  el.innerHTML=list.map(p=>{
-    const cat=getCategorias().find(c=>c.nome===p.categoria)||{emoji:'🔩',bg:'#f5f5f5'};
-    const badge=DISP_BADGE[p.disponibilidade]||'badge-gray';
-    const stars='★'.repeat(p.rating)+'☆'.repeat(5-p.rating);
-    return `<div class="card" style="margin-bottom:8px">
-      <div style="display:flex;align-items:center;gap:10px">
-        <div class="prov-avatar" style="background:${cat.bg}">${cat.emoji}</div>
-        <div style="flex:1">
-          <div class="card-title">${p.nome}</div>
-          <div class="card-sub">${p.categoria}${p.especialidade?' · '+p.especialidade:''}</div>
-          <div class="card-sub" style="margin-top:2px">📍 ${p.rua}${p.num?', '+p.num:''} — ${p.bairro}, ${p.cidade}/${p.uf}</div>
-          ${p.cep?`<div class="card-sub">CEP: ${p.cep}</div>`:''}
-          <div style="color:#e8a000;font-size:12px;margin-top:2px">${stars}</div>
-        </div>
-        <span class="badge ${badge}" style="align-self:flex-start">${p.disponibilidade}</span>
-      </div>
-      <div class="actions-row" style="margin-top:10px">
-        <button class="btn btn-outline" onclick="showProviderDetail(${p.id})" style="flex:1">Ver</button>
-        <button class="btn btn-primary" onclick="selectProvider(${p.id})" style="flex:1">📍 Mapa</button>
-        <button class="btn btn-red btn-icon" onclick="deletarPrestador(${p.id})">🗑</button>
-      </div>
-    </div>`;
+  el.innerHTML=list.map(function(p){
+    var cat   = getCategorias().find(function(c){return c.nome===p.categoria;})||{emoji:'🔩',bg:'#f5f5f5'};
+    var badge = DISP_BADGE[p.disponibilidade]||'badge-gray';
+    var rRound = Math.round(p.rating||0);
+    var stars  = '★'.repeat(rRound)+'☆'.repeat(5-rRound);
+    var rInfo  = p.rating ? (Number(p.rating).toFixed(1)+' ★'+(p.totalAvaliacoes?' ('+p.totalAvaliacoes+' aval.)':'')) : 'Sem avaliação';
+    // All comments (não truncado)
+    var comentDiv = p.comentario
+      ? '<div style="background:#f8f9ff;border-radius:8px;padding:8px 10px;margin-top:6px"><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">💬 COMENTÁRIO</div><div style="font-size:12px;color:var(--text);line-height:1.5">'+p.comentario+'</div></div>'
+      : '';
+    return '<div class="card" style="margin-bottom:8px">'
+      +'<div style="display:flex;align-items:center;gap:10px">'
+        +'<div class="prov-avatar" style="background:'+cat.bg+'">'+cat.emoji+'</div>'
+        +'<div style="flex:1">'
+          +'<div class="card-title">'+p.nome+'</div>'
+          +'<div class="card-sub">'+p.categoria+(p.especialidade?' · '+p.especialidade:'')+'</div>'
+          +'<div class="card-sub" style="margin-top:2px">📍 '+(p.rua||'')+(p.num?', '+p.num:'')+(p.bairro?' — '+p.bairro:'')+(p.cidade?', '+p.cidade:'')+(p.uf?'/'+p.uf:'')+'</div>'
+          +(p.cep?'<div class="card-sub">CEP: '+p.cep+'</div>':'')
+          +(p.telefone?'<div class="card-sub" style="margin-top:2px">📞 '+formatPhone(p.telefone)+'</div>':'')
+          +'<div style="color:#e8a000;font-size:12px;margin-top:4px">'+stars+' <span style="font-size:11px;color:var(--text-muted)">'+rInfo+'</span></div>'
+        +'</div>'
+        +'<span class="badge '+badge+'" style="align-self:flex-start">'+p.disponibilidade+'</span>'
+      +'</div>'
+      +'<div class="actions-row" style="margin-top:10px">'
+        +'<button class="btn btn-outline" onclick="showProviderDetail('+p.id+')" style="flex:1">Ver</button>'
+        +'<button class="btn btn-primary" onclick="selectProvider('+p.id+')" style="flex:1">📍 Mapa</button>'
+        +'<button class="btn btn-red btn-icon" onclick="deletarPrestador('+p.id+')">🗑</button>'
+      +'</div>'
+    +'</div>';
   }).join('');
 }
 
@@ -1179,7 +1353,9 @@ function updateBadge(){
 // ════════════════════════════════════════
 function providerRow(p){
   const cat=getCategorias().find(c=>c.nome===p.categoria)||{emoji:'🔩',bg:'#f5f5f5'};
-  const stars='★'.repeat(p.rating||0)+'☆'.repeat(5-(p.rating||0));
+  var ratingVal = Math.round(p.rating||0);
+  const stars='★'.repeat(ratingVal)+'☆'.repeat(5-ratingVal);
+  var ratingText = p.rating ? (Number(p.rating).toFixed(1)+' ★') : '—';
   const dispColor={'Disponível agora':'#2a7d3f','Somente agendamento':'#1a56a0','Ocupado':'#888'};
   const dispDot={'Disponível agora':'🟢','Somente agendamento':'🔵','Ocupado':'⚫'};
   const dot=dispDot[p.disponibilidade]||'⚫';
@@ -1195,6 +1371,8 @@ function providerRow(p){
       +'</div>'
       +'<div class="prov-meta">'+p.categoria+(p.especialidade?' · '+p.especialidade:'')+'</div>'
       +'<div class="prov-meta">📍 '+(p.bairro||'')+(p.cidade?', '+p.cidade:'')+'</div>'
+      +(p.telefone?'<div class="prov-meta">📞 '+formatPhone(p.telefone)+'</div>':'')
+      // comentario only shown in detail modal
       +'<div style="font-size:11px;font-weight:600;color:'+dcolor+';margin-top:2px">'+p.disponibilidade+'</div>'
     +'</div>'
     +'<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">'
@@ -1215,14 +1393,30 @@ function showProviderDetail(id){
   selectedProvider=p;
   const cat=getCategorias().find(c=>c.nome===p.categoria)||{emoji:'🔩',bg:'#f5f5f5'};
   const badge=DISP_BADGE[p.disponibilidade]||'badge-gray';
-  const stars='★'.repeat(p.rating||0)+'☆'.repeat(5-(p.rating||0));
+  var ratingVal = Math.round(p.rating||0);
+  const stars='★'.repeat(ratingVal)+'☆'.repeat(5-ratingVal);
+  var ratingText = p.rating ? (Number(p.rating).toFixed(1)+' ★') : '—';
   document.getElementById('modal-provider-content').innerHTML=`
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
       <div style="width:52px;height:52px;border-radius:50%;background:${cat.bg};display:flex;align-items:center;justify-content:center;font-size:26px">${cat.emoji}</div>
       <div style="flex:1">
         <div style="font-size:17px;font-weight:600">${p.nome}</div>
         <div style="font-size:13px;color:var(--text-muted)">${p.categoria}${p.especialidade?' · '+p.especialidade:''}</div>
-        <div style="color:#e8a000;font-size:15px;margin-top:2px">${stars}</div>
+        <div style="margin-top:4px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div id="detail-stars-${p.id}" style="display:flex;gap:2px;font-size:24px;cursor:pointer">
+            ${[1,2,3,4,5].map(n=>`<span onclick="avaliarPrestador(${p.id},${n})" 
+              style="color:${n<=(p.rating||0)?'#e8a000':'#ddd'};transition:color .15s"
+              onmouseover="hoverStars(${p.id},${n})" 
+              onmouseout="unhoverStars(${p.id},${p.rating||0})"
+              data-star="${n}">★</span>`).join('')}
+          </div>
+          <span id="detail-rating-label-${p.id}" style="font-size:12px;color:var(--text-muted)">
+            ${p.rating||0}/5 · ${p.totalAvaliacoes||1} avaliação${(p.totalAvaliacoes||1)>1?'es':''}
+          </span>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Toque na estrela para avaliar</div>
+      </div>
       </div>
       <span class="badge ${badge}">${p.disponibilidade}</span>
     </div>
@@ -1232,8 +1426,9 @@ function showProviderDetail(id){
     <div class="meta-row"><span class="meta-label">🏘 Bairro</span><span class="meta-value" style="font-size:12px">${p.bairro||'—'}</span></div>
     <div class="meta-row"><span class="meta-label">🏙 Cidade</span><span class="meta-value" style="font-size:12px">${p.cidade||'—'}/${p.uf||'—'}</span></div>
     ${p.cep?`<div class="meta-row"><span class="meta-label">📮 CEP</span><span class="meta-value" style="font-size:12px">${p.cep}</span></div>`:''}
-    ${p.telefone?`<div class="meta-row"><span class="meta-label">📞 Telefone</span><span class="meta-value">${p.telefone}</span></div>`:''}
+    ${p.telefone?`<div class="meta-row"><span class="meta-label">📞 Telefone</span><span class="meta-value">${formatPhone(p.telefone)}</span></div>`:''}
     ${p.valor?`<div class="meta-row"><span class="meta-label">💰 Valor</span><span class="meta-value green">${p.valor}</span></div>`:''}
+    ${p.comentario?`<div style="background:#f8f9ff;border-radius:10px;padding:10px 12px;margin:8px 0"><div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:4px">💬 COMENTÁRIO</div><div style="font-size:13px;color:var(--text);line-height:1.5">${p.comentario}</div></div>`:''}
     <div class="meta-row"><span class="meta-label">📏 Distância</span><span class="meta-value blue" id="detail-dist">Calculando...</span></div>
     <div class="meta-row"><span class="meta-label">⏱ Tempo</span><span class="meta-value green" id="detail-time">—</span></div>
     <div style="margin-bottom:4px"><button onclick="retryGeoDetail(${p.id})" style="font-size:12px;color:var(--blue);background:none;border:.5px solid var(--blue);border-radius:8px;padding:4px 10px;cursor:pointer">🔄 Recalcular distância</button></div>
@@ -1246,9 +1441,18 @@ function showProviderDetail(id){
     <div class="actions-row">
       <button class="btn btn-outline" onclick="openMapsRouteToProvider(${p.id})">🧭 Rota</button>
       <button class="btn btn-outline" style="color:#b25a00;border-color:#b25a00" onclick="closeModal('modal-provider');abrirEdicao(${p.id})">✏️ Editar</button>
-    </div>`;
+    </div>
+    <div style="margin-top:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:13px;font-weight:600">📝 Avaliações dos usuários</div>
+        <button onclick="avaliarPrestador(${p.id})" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer">+ Avaliar</button>
+      </div>
+      <div id="reviews-list-${p.id}"><div style="font-size:12px;color:var(--text-muted)">Carregando...</div></div>
+    </div>
+    `;
   openModal("modal-provider");
   if(userLat&&distMatrixService) calcDistanceForDetail(p);
+  setTimeout(function(){ carregarReviews(p.id); }, 400);
 }
 
 function selectProvider(id){
@@ -1553,6 +1757,8 @@ async function abrirEdicao(id){
   document.getElementById('e-tel').value   = p.telefone||'';
   document.getElementById('e-wpp').value   = p.whatsapp||'';
   document.getElementById('e-disp').value  = p.disponibilidade||'Disponível agora';
+  var ecEl = document.getElementById('e-comentario');
+  if(ecEl) ecEl.value = p.comentario||'';
   document.getElementById('e-valor').value = p.valor||'';
   document.getElementById('e-cep').value   = p.cep||'';
   document.getElementById('e-rua').value   = p.rua||'';
@@ -1612,12 +1818,19 @@ function salvarEdicao(){
     whatsapp:      document.getElementById('e-wpp').value.trim(),
     disponibilidade: document.getElementById('e-disp').value,
     valor:         document.getElementById('e-valor').value.trim(),
+    comentario:    (document.getElementById('e-comentario')||{}).value||'',
     rua, num, comp, bairro, cidade, uf, cep,
     endereco: enderecoCompleto,
     lat: addrChanged ? null : list[idx].lat,
     lng: addrChanged ? null : list[idx].lng
   });
-  saveProviders(list);
+  // Strip favorito from this provider before saving to Firebase
+  var cleanForFb = Object.assign({}, list[idx]);
+  delete cleanForFb.favorito;
+  if(window.fbSaveProvider) window.fbSaveProvider(cleanForFb);
+  // Save full list locally (with favorito preserved for this device)
+  window._providers = list;
+  localStorage.setItem('sf_providers', JSON.stringify(list));
   if(addrChanged && geocoder) geocodeProvider(list[idx]);
   closeModal('modal-editar');
   renderHomeProviders();
@@ -1665,7 +1878,7 @@ function salvarPerfil(){
 function abrirModalPerfil(){
   const p = loadPerfil();
   document.getElementById('perfil-nome').value = p.nome||'';
-  document.getElementById('perfil-tel').value  = p.tel||'';
+  document.getElementById('perfil-tel').value  = p.tel ? formatPhone(p.tel) : '';
   previewIniciais();
   const locEl = document.getElementById('location-label');
   document.getElementById('perfil-loc').textContent = locEl ? locEl.textContent : '—';
@@ -1798,7 +2011,7 @@ function salvarEditarCat(i){
   providers.forEach(function(p){
     if(p.categoria===nomeAntigo){
       p.categoria=novoNome; changed++;
-      if(window.fbSaveProvider) window.fbSaveProvider(p);
+      if(window.fbSaveProvider){ var cp=Object.assign({},p); delete cp.favorito; window.fbSaveProvider(cp); }
     }
   });
   if(changed){ window._providers=providers; localStorage.setItem('sf_providers',JSON.stringify(providers)); }
@@ -1885,7 +2098,9 @@ function forceSyncToFirebase(){
   var promises = [];
 
   providers.forEach(function(p){
-    promises.push(window.fbSaveProvider(p));
+    var clean = Object.assign({}, p);
+    delete clean.favorito;
+    promises.push(window.fbSaveProvider(clean));
   });
 
   // Só sobe categorias não-padrão (extras criadas pelo usuário)
@@ -1901,6 +2116,151 @@ function forceSyncToFirebase(){
   }).catch(function(e){
     showToast('❌ Erro ao sincronizar: ' + e.message);
     console.error('[Firebase sync]', e);
+  });
+}
+
+
+// ════════════════════════════════════════
+// AVALIAÇÃO COLETIVA DE PRESTADORES
+// ════════════════════════════════════════
+function hoverStars(id, n){
+  var container = document.getElementById('detail-stars-'+id);
+  if(!container) return;
+  container.querySelectorAll('span').forEach(function(s){
+    s.style.color = parseInt(s.dataset.star) <= n ? '#e8a000' : '#ddd';
+  });
+}
+
+function unhoverStars(id, currentRating){
+  var container = document.getElementById('detail-stars-'+id);
+  if(!container) return;
+  container.querySelectorAll('span').forEach(function(s){
+    s.style.color = parseInt(s.dataset.star) <= currentRating ? '#e8a000' : '#ddd';
+  });
+}
+
+// Abre modal para deixar nota + comentário
+function avaliarPrestador(id, notaPreSelecionada){
+  window._avaliarId = id;
+  // Pre-select stars in modal
+  setTimeout(function(){
+    if(notaPreSelecionada) selecionarEstrelasModal(notaPreSelecionada);
+  }, 100);
+  openModal('modal-avaliar');
+}
+
+function selecionarEstrelasModal(n){
+  window._notaSelecionada = n;
+  document.querySelectorAll('.star-modal').forEach(function(s){
+    s.style.color = parseInt(s.dataset.v) <= n ? '#e8a000' : '#ddd';
+  });
+  var labels = ['','Ruim','Regular','Bom','Muito bom','Excelente!'];
+  var lbl = document.getElementById('avaliar-rating-label');
+  if(lbl) lbl.textContent = labels[n]||'';
+}
+
+function confirmarAvaliacao(){
+  var id   = window._avaliarId;
+  var nota = window._notaSelecionada || 0;
+  var texto = (document.getElementById('avaliar-texto')||{}).value||'';
+  var autor = (document.getElementById('avaliar-autor')||{}).value||'Anônimo';
+
+  if(!nota){ showToast('⚠️ Selecione uma nota'); return; }
+
+  // Save review to Firebase
+  var review = {
+    id:    Date.now(),
+    nota:  nota,
+    texto: texto.trim(),
+    autor: autor.trim() || 'Anônimo',
+    data:  new Date().toISOString()
+  };
+  if(window.fbSaveReview) window.fbSaveReview(id, review);
+
+  // Rating will be recalculated by carregarReviews from real Firebase data
+  // Just increment locally as optimistic update
+  var list = window._providers || loadProviders();
+  var idx  = list.findIndex(function(x){ return x.id===id; });
+  if(idx >= 0){
+    // Optimistic update (will be corrected by carregarReviews)
+    list[idx].totalAvaliacoes = (list[idx].totalAvaliacoes||0) + 1;
+    window._providers = list;
+    localStorage.setItem('sf_providers', JSON.stringify(list));
+  }
+
+  closeModal('modal-avaliar');
+  document.getElementById('avaliar-texto').value = '';
+  document.getElementById('avaliar-autor').value = '';
+  window._notaSelecionada = 0;
+  document.querySelectorAll('.star-modal').forEach(function(s){ s.style.color='#ddd'; });
+
+  showToast('✅ Avaliação enviada! Obrigado.');
+  renderHomeProviders();
+
+  // Reload reviews in detail modal if open
+  if(id) carregarReviews(id);
+}
+
+function carregarReviews(providerId){
+  var el = document.getElementById('reviews-list-'+providerId);
+  if(!el) return;
+  el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">Carregando avaliações...</div>';
+  if(!window.fbGetReviews) return;
+
+  window.fbGetReviews(providerId, function(reviews){
+    // ── Recalculate rating from real reviews ──────────────────
+    var total = reviews.length;
+    var media = 0;
+    if(total > 0){
+      var soma = reviews.reduce(function(acc, r){ return acc + (r.nota||0); }, 0);
+      media = Math.round((soma / total) * 10) / 10;
+    }
+
+    // Update provider in memory + Firebase with real counts
+    var list = window._providers || loadProviders();
+    var idx  = list.findIndex(function(x){ return x.id==providerId; });
+    if(idx >= 0){
+      list[idx].rating          = total > 0 ? media : list[idx].rating;
+      list[idx].totalAvaliacoes = total;
+      window._providers = list;
+      localStorage.setItem('sf_providers', JSON.stringify(list));
+      if(total > 0 && window.fbSaveProvider){
+        var clean = Object.assign({}, list[idx]); delete clean.favorito;
+        window.fbSaveProvider(clean);
+      }
+    }
+
+    // Update stars + counter in detail modal
+    var starsEl = document.getElementById('detail-stars-'+providerId);
+    var labelEl = document.getElementById('detail-rating-label-'+providerId);
+    if(starsEl && total > 0){
+      starsEl.querySelectorAll('span').forEach(function(s){
+        s.style.color = parseInt(s.dataset.star) <= Math.round(media) ? '#e8a000' : '#ddd';
+      });
+    }
+    if(labelEl){
+      labelEl.textContent = total > 0
+        ? (media+'/5 · '+total+' avaliação'+(total>1?'es':''))
+        : 'Sem avaliações ainda';
+    }
+
+    // Render reviews list
+    if(!total){
+      el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">Nenhuma avaliação ainda. Seja o primeiro!</div>';
+      return;
+    }
+    el.innerHTML = reviews.map(function(r){
+      var estrelas = '★'.repeat(r.nota||0)+'☆'.repeat(5-(r.nota||0));
+      var data = r.data ? new Date(r.data).toLocaleDateString('pt-BR') : '';
+      return '<div style="border-bottom:.5px solid var(--border);padding:10px 0">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center">'
+          +'<span style="font-size:13px;font-weight:600">'+(r.autor||'Anônimo')+'</span>'
+          +'<span style="font-size:11px;color:var(--text-muted)">'+data+'</span>'
+        +'</div>'
+        +'<div style="color:#e8a000;font-size:15px;margin:3px 0">'+estrelas+'</div>'
+        +(r.texto?'<div style="font-size:13px;color:var(--text);line-height:1.5;margin-top:2px">'+r.texto+'</div>':'')
+      +'</div>';
+    }).join('');
   });
 }
 
@@ -1943,22 +2303,52 @@ async function reverseGeocode(lat,lng){
 // ════════════════════════════════════════
 // PWA INSTALL
 // ════════════════════════════════════════
-window.addEventListener('beforeinstallprompt',e=>{
-  e.preventDefault(); deferredInstall=e;
-  document.getElementById('install-banner').classList.add('show');
+window.addEventListener('beforeinstallprompt', function(e){
+  e.preventDefault();
+  deferredInstall = e;
+  var banner = document.getElementById('install-banner');
+  if(banner) banner.style.display = 'flex';
+  console.log('[PWA] Pronto para instalar');
 });
-document.getElementById('install-btn').onclick=async()=>{
-  if(!deferredInstall) return;
+window.addEventListener('appinstalled', function(){
+  showToast('✅ Instalado! Procure o ícone na tela inicial.', 4000);
+  var banner = document.getElementById('install-banner');
+  if(banner) banner.style.display = 'none';
+  deferredInstall = null;
+});
+document.getElementById('install-btn').onclick = async function(){
+  if(!deferredInstall){
+    openModal('modal-install-help');
+    return;
+  }
   deferredInstall.prompt();
-  const r=await deferredInstall.userChoice;
-  if(r.outcome==='accepted') showToast('✅ App instalado!');
-  deferredInstall=null;
-  document.getElementById('install-banner').classList.remove('show');
+  var result = await deferredInstall.userChoice;
+  if(result.outcome === 'accepted'){
+    showToast('✅ Instalado! Procure o ícone na tela inicial.', 4000);
+  }
+  deferredInstall = null;
+  document.getElementById('install-banner').style.display = 'none';
 };
 
 // ════════════════════════════════════════
 // STARTUP
 // ════════════════════════════════════════
+
+function instalarApp(){
+  if(deferredInstall){
+    deferredInstall.prompt();
+    deferredInstall.userChoice.then(function(r){
+      if(r.outcome==='accepted') showToast('✅ Instalado! Procure o ícone na tela inicial.', 4000);
+      deferredInstall = null;
+      document.getElementById('install-banner').style.display='none';
+    });
+  } else if(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches){
+    showToast('✅ App já está instalado!');
+  } else {
+    openModal('modal-install-help');
+  }
+}
+
 // ════════════════════════════════════════
 // BOTÃO VOLTAR ANDROID
 // ════════════════════════════════════════
@@ -1994,6 +2384,19 @@ window.addEventListener('popstate', function(e){
 });
 
 window.addEventListener('load',()=>{
+  // Migrate favorites from old sf_providers to dedicated sf_favs key (one-time)
+  try{
+    if(!localStorage.getItem('sf_favs_migrated')){
+      var oldPs = JSON.parse(localStorage.getItem('sf_providers')||'[]');
+      var favs  = {};
+      oldPs.forEach(function(p){ if(p.favorito) favs[String(p.id)]=true; });
+      if(Object.keys(favs).length > 0){
+        localStorage.setItem('sf_favs', JSON.stringify(favs));
+        console.log('[Favs] Migrados:', Object.keys(favs).length);
+      }
+      localStorage.setItem('sf_favs_migrated','1');
+    }
+  }catch(e){}
   // Migration: ensure all providers get re-geocoded if lat is null
   // (fixes providers saved before enderecoGeo fix)
   try {
@@ -2107,7 +2510,7 @@ window.addEventListener('load',()=>{
     </div>
     <div class="form-group">
       <label class="form-label">Telefone</label>
-      <input class="form-input" id="perfil-tel" type="tel" placeholder="(24) 9 9999-9999">
+      <input class="form-input" id="perfil-tel" type="tel" placeholder="(24) 99999-9999" maxlength="15" oninput="maskPhone(this)">
     </div>
     <div style="height:.5px;background:var(--border);margin:4px 0 12px"></div>
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">📍 Localização atual: <span id="perfil-loc">—</span></div>
@@ -2222,9 +2625,91 @@ window.addEventListener('load',()=>{
       </div>
     </div>
 
+    <div class="form-group" style="margin-top:8px">
+      <label class="form-label">Comentário / Observação</label>
+      <textarea class="form-input" id="e-comentario" rows="3"
+        placeholder="Ex: Profissional pontual, ótimo atendimento, recomendo!"
+        style="resize:none;font-family:inherit;line-height:1.5"></textarea>
+    </div>
     <div style="display:flex;gap:8px;margin-top:8px">
       <button class="btn btn-outline" onclick="closeModal('modal-editar')" style="flex:1">Cancelar</button>
       <button class="btn btn-primary" onclick="salvarEdicao()" style="flex:2">💾 Salvar alterações</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══ MODAL: AVALIAR PRESTADOR ══ -->
+<div class="modal-overlay" id="modal-avaliar" onclick="closeModalBg(event,'modal-avaliar')">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">⭐ Avaliar prestador</div>
+
+    <div class="form-group">
+      <label class="form-label">Seu nome (opcional)</label>
+      <input class="form-input" id="avaliar-autor" type="text" placeholder="Ex: João Silva">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Nota <span class="req">*</span></label>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="display:flex;gap:4px;font-size:32px;cursor:pointer">
+          <span class="star-modal" data-v="1" onclick="selecionarEstrelasModal(1)" style="color:#ddd">★</span>
+          <span class="star-modal" data-v="2" onclick="selecionarEstrelasModal(2)" style="color:#ddd">★</span>
+          <span class="star-modal" data-v="3" onclick="selecionarEstrelasModal(3)" style="color:#ddd">★</span>
+          <span class="star-modal" data-v="4" onclick="selecionarEstrelasModal(4)" style="color:#ddd">★</span>
+          <span class="star-modal" data-v="5" onclick="selecionarEstrelasModal(5)" style="color:#ddd">★</span>
+        </div>
+        <span id="avaliar-rating-label" style="font-size:14px;color:var(--text-muted)"></span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Comentário</label>
+      <textarea class="form-input" id="avaliar-texto" rows="4"
+        placeholder="Conte sua experiência com este prestador..."
+        style="resize:none;font-family:inherit;line-height:1.5"></textarea>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-outline" onclick="closeModal('modal-avaliar')" style="flex:1">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarAvaliacao()" style="flex:2">✅ Enviar avaliação</button>
+    </div>
+  </div>
+</div>
+
+
+<script>
+// Service Worker — necessário para instalação PWA no Android
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./sw.js', {scope: './'})
+    .then(function(reg){ console.log('[SW] Registrado:', reg.scope); })
+    .catch(function(err){ console.warn('[SW] Erro:', err); });
+}
+</script>
+
+
+<!-- ══ MODAL: AJUDA INSTALAÇÃO ══ -->
+<div class="modal-overlay" id="modal-install-help" onclick="closeModalBg(event,'modal-install-help')">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">📲 Instalar o app</div>
+    <div style="font-size:14px;color:var(--text);line-height:1.8">
+      <div style="background:#f0f6ff;border-radius:12px;padding:14px;margin-bottom:12px">
+        <div style="font-weight:600;margin-bottom:8px">📱 Android (Chrome)</div>
+        <div>1. Toque nos <strong>3 pontinhos ⋮</strong></div>
+        <div>2. Toque em <strong>"Adicionar à tela inicial"</strong></div>
+        <div>3. Confirme tocando em <strong>"Adicionar"</strong></div>
+      </div>
+      <div style="background:#f0f6ff;border-radius:12px;padding:14px">
+        <div style="font-weight:600;margin-bottom:8px">🍎 iPhone (Safari)</div>
+        <div>1. Toque no ícone <strong>compartilhar ⬆️</strong></div>
+        <div>2. Toque em <strong>"Adicionar à Tela Início"</strong></div>
+        <div>3. Confirme tocando em <strong>"Adicionar"</strong></div>
+      </div>
+    </div>
+    <div style="margin-top:16px">
+      <button class="btn btn-primary" onclick="closeModal('modal-install-help')">Entendido ✓</button>
     </div>
   </div>
 </div>
